@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
-    paths: [ 'ANGi-v2.0.apk', '.github/workflows/angi-ng-smoke.yml' ]
+    paths: [ 'ANGi-v2.1.apk', '.github/workflows/angi-ng-smoke.yml' ]
 
 jobs:
   smoke:
@@ -21,7 +21,7 @@ jobs:
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
-      - name: Émulateur + test
+      - name: Émulateur + test complet
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
@@ -32,23 +32,131 @@ jobs:
           script: |
             set -e
             adb root || true; adb wait-for-device; sleep 3
+
+            # Position GPS simulée (Amiens)
+            adb emu geo fix 2.288156 49.872177 || true
+
             echo "=== 1. Installation ==="
-            adb install -r ANGi-v2.0.apk
+            adb install -r ANGi-v2.1.apk
             adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || true
             adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || true
+            adb shell pm grant com.starfleet.angi android.permission.POST_NOTIFICATIONS || true
+
+            dump_ui() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true; adb pull /sdcard/ui.xml ui.xml >/dev/null 2>&1 || true; }
+            shot() { adb exec-out screencap -p > "ecran_$1.png"; }
+            # Centre d'un noeud dont le texte CONTIENT $1
+            center_of() {
+              adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
+              adb pull /sdcard/ui.xml ui.xml >/dev/null 2>&1 || true
+              python3 - "$1" <<'PY'
+            import re, sys
+            needle = re.escape(sys.argv[1])
+            s = open('ui.xml', encoding='utf-8', errors='ignore').read()
+            m = re.search(r'text="[^"]*' + needle + r'[^"]*"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', s)
+            if not m:
+                m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"[^>]*text="[^"]*' + needle + r'[^"]*"', s)
+            if not m:
+                sys.exit(2)
+            print((int(m.group(1)) + int(m.group(3))) // 2, (int(m.group(2)) + int(m.group(4))) // 2)
+            PY
+            }
+            tap_text() { adb shell input tap $(center_of "$1"); }
+            texts() { grep -oE 'text="[^"]*"' ui.xml | head -14 || true; }
+
             echo "=== 2. Lancement ==="
             adb shell am start -n com.starfleet.angi/.MainActivity
-            sleep 20
+            sleep 15
             adb shell pidof com.starfleet.angi && echo "PROCESS ALIVE" || echo "PROCESS MORT"
-            echo "=== 3. UI ==="
+            dump_ui; texts; shot main
+
+            echo "=== 3. Carte + position ==="
+            sleep 3
+            dump_ui
+            grep -oE 'text="Position : [^"]*"' ui.xml || echo "PAS DE POSITION AFFICHEE"
+            grep -c 'android.webkit.WebView' ui.xml && echo "WEBVIEW CARTE PRESENT" || echo "PAS DE WEBVIEW"
+            shot carte
+
+            echo "=== 4. Ajout d'un contact ==="
+            tap_text "Contacts d'urgence"
+            sleep 3; dump_ui; shot contacts
+            tap_text "Ajouter un contact"
+            sleep 2
             adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
             adb pull /sdcard/ui.xml ui.xml >/dev/null 2>&1 || true
-            grep -oE 'text="[^"]*"' ui.xml | head -20 || true
-            adb exec-out screencap -p > ecran.png
-            echo "=== 4. Logcat ==="
+            python3 - <<'PY' > edpos.txt
+            import re
+            s = open('ui.xml', encoding='utf-8', errors='ignore').read()
+            eds = re.findall(r'class="android.widget.EditText"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', s)
+            pts = []
+            for e in eds:
+                x = (int(e[0]) + int(e[2])) // 2
+                y = (int(e[1]) + int(e[3])) // 2
+                pts.append((y, x))
+            pts.sort()
+            for p in pts: print(p[1], p[0])
+            PY
+            NOM=$(sed -n '1p' edpos.txt); TEL=$(sed -n '2p' edpos.txt)
+            echo "champs: nom=$NOM tel=$TEL"
+            adb shell input tap $NOM; sleep 1; adb shell input text "Josselin"
+            adb shell input tap $TEL; sleep 1; adb shell input text "0612345678"
+            sleep 1; dump_ui; shot editcontact
+            tap_text "Enregistrer"
+            sleep 2; dump_ui; shot contact_apres_save
+            echo "--- liste apres sauvegarde ---"
+            texts
+            grep "Josselin" ui.xml && echo "CONTACT ENREGISTRE OK" || echo "CONTACT ABSENT"
+
+            echo "=== 5. Dialogue edit : bouton Annuler (plus de 'Je vais bien') ==="
+            tap_text "Josselin"
+            sleep 2; dump_ui; shot edit_dialog
+            texts
+            grep "Annuler" ui.xml && echo "BOUTON ANNULER OK" || echo "PAS D'ANNULER"
+            if grep "Je vais bien" ui.xml; then echo "BUG: JE VAIS BIEN ENCORE PRESENT"; else echo "OK: plus de 'Je vais bien' dans contacts"; fi
+            tap_text "Annuler" || true
+            sleep 1
+
+            echo "=== 6. Réglages + test alarme ==="
+            adb shell input keyevent 4; sleep 1
+            adb shell input keyevent 4; sleep 2
+            tap_text "Réglages"
+            sleep 3; dump_ui; shot reglages
+            texts
+            grep "Tester l'alarme" ui.xml && echo "BOUTON TEST PRESENT" || echo "PAS DE BOUTON TEST"
+            grep "Version 2.1" ui.xml && echo "VERSION 2.1 OK" || echo "VERSION ABSENTE"
+            tap_text "Tester l'alarme (aucun SMS)"
+            sleep 3
+            dump_ui; shot alarme
+            texts
+            grep "MODE TEST" ui.xml && echo "BANNIERE MODE TEST OK" || echo "PAS DE MODE TEST"
+            grep "Tenez, ça va ?" ui.xml && echo "ECRAN ALARME OK" || echo "PAS D'ECRAN ALARME"
+            sleep 1; shot alarme_flash1
+            sleep 2; shot alarme_flash2
+            echo "--- attente fin du compte a rebours (15s) ---"
+            sleep 11
+            dump_ui
+            grep "Terminé" ui.xml && echo "FIN DE TEST AFFICHEE" || echo "PAS DE FIN AFFICHEE"
+            shot alarme_fin
+            tap_text "Je vais bien" || true
+            sleep 2
+            adb shell input keyevent 4; sleep 1
+
+            echo "=== 7. Envoyer ma position (confirmation) ==="
+            dump_ui
+            tap_text "Envoyer ma position"
+            sleep 7
+            dump_ui; shot envoi_position
+            texts
+            grep "Position envoyée" ui.xml && echo "DIALOGUE CONFIRMATION OK" || echo "PAS DE CONFIRMATION"
+            grep "Destinataires" ui.xml && echo "DESTINATAIRES OK" || echo "PAS DE DESTINATAIRES"
+            grep "Résultat" ui.xml && echo "BILAN OK" || echo "PAS DE BILAN"
+            tap_text "OK" || true
+            sleep 1
+
+            echo "=== 8. Logcat ==="
             adb logcat -d > logcat.txt || true
             grep -E "FATAL EXCEPTION|ANR in com.starfleet" logcat.txt | tail -10 || echo "AUCUN CRASH"
-            echo "=== 5. Journal app ==="
+
+            echo "=== 9. Journal app ==="
             adb shell "cat /sdcard/Download/ANGi_debug.log.txt 2>/dev/null" > angi_debug.txt || true
             cat angi_debug.txt || true
       - name: Artefacts
