@@ -175,13 +175,27 @@ def main():
         print(f"  ✍️ {key} = {val}")
     screenshot("06_formulaire_rempli.png")
 
-    # Sauvegarder
+    # Fermer le clavier virtuel (il couvre SAVE CONTACT)
+    adb("shell", "input", "keyevent", "111")  # ESC
+    time.sleep(2)
+    adb("shell", "input", "keyevent", "4")    # BACK
+    time.sleep(3)
+    adb("shell", "input", "keyevent", "4")
+    time.sleep(2)
+
+    # Sauvegarder : chercher SAVE CONTACT (scroll si nécessaire)
     xml = dump()
-    if not tap_first(xml, "ave", "Save", "save"):
-        # bouton en bas — scroll léger
-        scroll_up(1)
+    saved = False
+    for i in range(6):
         xml = dump()
-        tap_first(xml, "ave", "Save", "save")
+        if "SAVE CONTACT" in xml or "ave" in xml:
+            if tap_first(xml, "SAVE CONTACT", "ave", "Save"):
+                saved = True
+                break
+        scroll_down()
+    if not saved:
+        print("  ❌ SAVE CONTACT introuvable (même après scroll)")
+        print("  Textes:", texts(xml))
     time.sleep(6)
 
     # --- 4. Vérifier la liste ---
@@ -189,10 +203,14 @@ def main():
     xml = dump()
     print("  Textes après sauvegarde:", texts(xml))
     screenshot("07_liste_apres_ajout.png")
-    if "Test" in xml or "Urgence" in xml:
-        print("  ✅ Contact ajouté visible dans la liste")
+    # vérifier via le journal que la création a été enregistrée
+    r = adb("shell", "cat", "/sdcard/Download/ANGi_debug.log.txt")
+    if "CONTACTS] Creation" in r.stdout or "CONTACTS] Cr" in r.stdout:
+        print("  ✅ Création de contact confirmée par le journal")
+    elif "Test" in xml or "Urgence" in xml:
+        print("  ✅ Contact visible dans la liste (XML)")
     else:
-        print("  ⚠️ Contact non visible — vérifier captures + journal")
+        print("  ⚠️ Création non confirmée — vérifier captures + journal")
 
     # --- 5. Réglages → Envoyer ma position ---
     print("\n[6] Réglages → Envoyer ma position")
