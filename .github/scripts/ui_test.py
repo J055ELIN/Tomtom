@@ -175,24 +175,21 @@ def main():
         print(f"  ✍️ {key} = {val}")
     screenshot("06_formulaire_rempli.png")
 
-    # Fermer le clavier virtuel (il couvre SAVE CONTACT)
-    adb("shell", "input", "keyevent", "111")  # ESC
+    # Fermer le clavier SANS quitter le formulaire : ESC uniquement
+    adb("shell", "input", "keyevent", "111")  # ESC ferme le clavier
     time.sleep(2)
-    adb("shell", "input", "keyevent", "4")    # BACK
-    time.sleep(3)
-    adb("shell", "input", "keyevent", "4")
-    time.sleep(2)
-
-    # Sauvegarder : chercher SAVE CONTACT (scroll si nécessaire)
     xml = dump()
+    print("  Après ESC, SAVE CONTACT visible:", "SAVE CONTACT" in xml)
+
+    # Sauvegarder : SAVE CONTACT est en bas du formulaire (ScrollView)
     saved = False
     for i in range(6):
         xml = dump()
-        if "SAVE CONTACT" in xml or "ave" in xml:
-            if tap_first(xml, "SAVE CONTACT", "ave", "Save"):
+        if "SAVE CONTACT" in xml:
+            if tap_first(xml, "SAVE CONTACT"):
                 saved = True
                 break
-        scroll_down()
+        scroll_down()   # scroller DANS le formulaire
     if not saved:
         print("  ❌ SAVE CONTACT introuvable (même après scroll)")
         print("  Textes:", texts(xml))
