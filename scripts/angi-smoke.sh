@@ -87,9 +87,10 @@ echo "champs: nom=$NOM tel=$TEL"
 adb shell input tap $NOM
 sleep 1
 adb shell input text "Josselin"
-adb shell input tap $TEL
+adb shell input keyevent 61
 sleep 1
 adb shell input text "0612345678"
+adb shell input keyevent 111
 sleep 1
 dump_ui
 shot editcontact
