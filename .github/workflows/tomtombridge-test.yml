@@ -2,7 +2,7 @@
 # Workflow de test TomTom Bridge sur émulateur Android (GitHub Actions)
 # ReactiveCircus/android-emulator-runner (KVM sur les runners)
 #
-# Smoke test : installation + lancement sans crash + navigation onglets + logs.
+# Smoke test : installation + permissions + lancement sans crash + navigation.
 # Pas de Bluetooth sur émulateur → l'app démarre « sans montre », l'UI doit
 # fonctionner (c'est ce qu'on teste).
 # ============================================================================
@@ -53,9 +53,26 @@ jobs:
             echo "===== 1. Installation de l'APK ====="
             adb install -r TomTomBridge-release.apk
 
-            echo "===== 2. Lancement + vérification process ====="
+            echo "===== 1b. Accorder les permissions (évite les dialogs) ====="
+            adb shell pm grant com.tomtombridge.app android.permission.READ_CONTACTS || echo "grant contacts ignoré"
+            adb shell pm grant com.tomtombridge.app android.permission.READ_PHONE_STATE || echo "grant phone ignoré"
+            adb shell pm grant com.tomtombridge.app android.permission.RECEIVE_SMS || echo "grant sms ignoré"
+            adb shell pm grant com.tomtombridge.app android.permission.POST_NOTIFICATIONS || echo "grant notif ignoré (API<33)"
+            adb shell pm grant com.tomtombridge.app android.permission.ACCESS_FINE_LOCATION || echo "grant loc ignoré"
+            adb shell pm grant com.tomtombridge.app android.permission.RECORD_AUDIO || echo "grant audio ignoré"
+
+            echo "===== 2. Lancement + fermer les dialogs résiduels ====="
             adb shell am start -n com.tomtombridge.app/.MainActivity
-            sleep 20
+            sleep 8
+            # accepter les éventuels dialogues de permission encore affichés
+            adb shell input keyevent 61 || true   # TAB
+            sleep 1
+            adb shell input keyevent 66 || true   # ENTER (sélectionne Allow)
+            sleep 2
+            adb shell input keyevent 4 || true    # BACK
+            sleep 2
+
+            echo "===== 2b. Vérification process ====="
             adb shell pidof com.tomtombridge.app && echo "PROCESS ALIVE" || echo "PROCESS MORT !"
 
             echo "===== 3. Capture écran accueil ====="
@@ -64,7 +81,6 @@ jobs:
             adb pull /sdcard/ui_accueil.xml ui_accueil.xml 2>/dev/null || true
 
             echo "===== 4. Navigation onglets (barre en bas) ====="
-            # positions x approximatives sur pixel_4 (largeur 1080)
             for x in 108 270 432 594 756 918; do
               adb shell input tap $x 1850 || true
               sleep 2
