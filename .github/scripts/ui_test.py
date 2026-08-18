@@ -153,16 +153,9 @@ def main():
     # --- 3. Ajouter un contact ---
     print("\n[4] Ajout d'un contact")
     xml = dump()
-    if not tap_first(xml, "dd emergency", "dd contact", "dd", "+", "Add"):
-        # essayer un FAB éventuel : dernier node clickable en bas à droite
-        print("  ⚠️ bouton d'ajout non trouvé — essai FAB")
-        nodes = find_nodes(xml, [""])
-        cand = [n for n in nodes if "dd" in n[1].lower() or n[1].strip() == "|"]
-        if cand:
-            tap_center(cand[-1][2], cand[-1][3])
-        else:
-            print("  ❌ impossible d'ouvrir le formulaire")
-    time.sleep(5)
+    if not tap_first(xml, "DD EMERGENCY", "ETUP YOUR", "dd emergency", "dd contact"):
+        print("  ❌ bouton ADD EMERGENCY CONTACTS introuvable")
+    time.sleep(6)
     xml = dump()
     print("  Formulaire textes:", texts(xml))
     screenshot("05_formulaire.png")
@@ -203,19 +196,27 @@ def main():
 
     # --- 5. Retour réglages → Envoyer ma position ---
     print("\n[6] Réglages → Envoyer ma position")
-    adb("shell", "input", "keyevent", "4")  # back
-    time.sleep(3)
+    # revenir à l'écran des réglages : back (liste contacts) + back (écran contacts)
     adb("shell", "input", "keyevent", "4")
     time.sleep(3)
+    adb("shell", "input", "keyevent", "4")
+    time.sleep(4)
     xml = dump()
+    print("  Après backs:", texts(xml))
     found = False
     for i in range(8):
         xml = dump()
-        if "osition" in xml or "Envoyer" in xml:
+        if "osition" in xml or "Envoyer" in xml or "Surveillance" in xml:
             found = True
             break
         scroll_down()
     if found:
+        # scroll léger pour révéler "Envoyer ma position" si sous "Surveillance continue"
+        for i in range(2):
+            xml = dump()
+            if "osition" in xml:
+                break
+            scroll_down()
         tap_first(xml, "osition", "Envoyer")
         time.sleep(5)
         print("  ✅ Clic « Envoyer ma position » (SMS tenté — journal attendu)")
