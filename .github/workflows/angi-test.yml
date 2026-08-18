@@ -57,6 +57,9 @@ jobs:
           emulator-options: -no-snapshot -noaudio -no-boot-anim -no-window -gpu swiftshader_indirect
           script: |
             set -e
+            adb root || true
+            adb wait-for-device
+            sleep 3
 
             echo "===== 1. Installation de l'APK ====="
             adb install -r ANGi-v1.1.apk
@@ -80,12 +83,12 @@ jobs:
 
             echo "===== 5. Navigation : Réglages → Contacts d'urgence ====="
             # clic sur l'icône Réglages (engrenage) puis sur « Contacts d'urgence »
-            python3 .github/scripts/ui_tap.py "Réglages" 2 || echo "pas de bouton Réglages"
+            python3 .github/scripts/ui_tap.py "ettings" 0 || echo "pas de bouton Settings"
             sleep 5
             adb exec-out screencap -p > ecran_reglages.png
             adb shell uiautomator dump /sdcard/ui2.xml >/dev/null 2>&1 || true
             adb pull /sdcard/ui2.xml ui_reglages.xml >/dev/null 2>&1 || true
-            python3 .github/scripts/ui_tap.py "Contacts d'urgence" 2 || echo "pas de lien contacts"
+            python3 .github/scripts/ui_tap.py "ontact" 0 || echo "pas de lien contacts"
             sleep 6
             adb exec-out screencap -p > ecran_contacts.png
             adb shell uiautomator dump /sdcard/ui3.xml >/dev/null 2>&1 || true
@@ -93,7 +96,7 @@ jobs:
             grep -oE 'text="[^"]*"' ui_contacts.xml 2>/dev/null | head -20 || true
 
             echo "===== 6. Journal de debug de l'app (Téléchargements) ====="
-            adb shell "ls -la /sdcard/Download/ 2>/dev/null; echo '--- CONTENU ---'; cat /sdcard/Download/ANGi_debug.log 2>/dev/null" > angi_debug.txt || true
+            adb shell "ls -la /sdcard/Download/ 2>/dev/null; echo '--- CONTENU ---'; cat /sdcard/Download/ANGi_debug.log.txt 2>/dev/null; cat /sdcard/Download/ANGi_debug.log 2>/dev/null" > angi_debug.txt || true
             cat angi_debug.txt || true
 
             echo "===== 7. Bilan crash dans logcat ====="
