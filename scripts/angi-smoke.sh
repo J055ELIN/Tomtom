@@ -30,9 +30,9 @@ center_of() {
 import re, sys
 needle = re.escape(sys.argv[1])
 s = open('ui.xml', encoding='utf-8', errors='ignore').read()
-m = re.search(r'text="[^"]*' + needle + r'[^"]*"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', s)
+m = re.search(r'text="[^"]*' + needle + r'[^"]*"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', s, re.IGNORECASE)
 if not m:
-    m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"[^>]*text="[^"]*' + needle + r'[^"]*"', s)
+    m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"[^>]*text="[^"]*' + needle + r'[^"]*"', s, re.IGNORECASE)
 if not m:
     sys.exit(2)
 print((int(m.group(1)) + int(m.group(3))) // 2, (int(m.group(2)) + int(m.group(4))) // 2)
@@ -100,7 +100,7 @@ dump_ui
 shot contact_apres_save
 echo "--- liste apres sauvegarde ---"
 texts
-if grep -q "Josselin" ui.xml; then echo "CONTACT ENREGISTRE OK"; else echo "CONTACT ABSENT"; fi
+if grep -qi "Josselin" ui.xml; then echo "CONTACT ENREGISTRE OK"; else echo "CONTACT ABSENT"; fi
 
 echo "=== 5. Dialogue edit : bouton Annuler (plus de 'Je vais bien') ==="
 tap_text "Josselin"
@@ -108,8 +108,8 @@ sleep 2
 dump_ui
 shot edit_dialog
 texts
-if grep -q "Annuler" ui.xml; then echo "BOUTON ANNULER OK"; else echo "PAS D'ANNULER"; fi
-if grep -q "Je vais bien" ui.xml; then echo "BUG: JE VAIS BIEN ENCORE PRESENT"; else echo "OK: plus de 'Je vais bien' dans contacts"; fi
+if grep -qi "Annuler" ui.xml; then echo "BOUTON ANNULER OK"; else echo "PAS D'ANNULER"; fi
+if grep -qi "Je vais bien" ui.xml; then echo "BUG: JE VAIS BIEN ENCORE PRESENT"; else echo "OK: plus de 'Je vais bien' dans contacts"; fi
 tap_text "Annuler" || true
 sleep 1
 
@@ -124,15 +124,15 @@ sleep 3
 dump_ui
 shot reglages
 texts
-if grep -q "Tester l'alarme" ui.xml; then echo "BOUTON TEST PRESENT"; else echo "PAS DE BOUTON TEST"; fi
-if grep -q "Version 2.1" ui.xml; then echo "VERSION 2.1 OK"; else echo "VERSION ABSENTE"; fi
+if grep -qi "Tester l'alarme" ui.xml; then echo "BOUTON TEST PRESENT"; else echo "PAS DE BOUTON TEST"; fi
+if grep -qi "Version 2.1" ui.xml; then echo "VERSION 2.1 OK"; else echo "VERSION ABSENTE"; fi
 tap_text "Tester l'alarme (aucun SMS)"
 sleep 3
 dump_ui
 shot alarme
 texts
-if grep -q "MODE TEST" ui.xml; then echo "BANNIERE MODE TEST OK"; else echo "PAS DE MODE TEST"; fi
-if grep -q "Tenez, ça va ?" ui.xml; then echo "ECRAN ALARME OK"; else echo "PAS D'ECRAN ALARME"; fi
+if grep -qi "MODE TEST" ui.xml; then echo "BANNIERE MODE TEST OK"; else echo "PAS DE MODE TEST"; fi
+if grep -qi "Tenez, ça va ?" ui.xml; then echo "ECRAN ALARME OK"; else echo "PAS D'ECRAN ALARME"; fi
 sleep 1
 shot alarme_flash1
 sleep 2
@@ -140,7 +140,7 @@ shot alarme_flash2
 echo "--- attente fin du compte a rebours (15s) ---"
 sleep 11
 dump_ui
-if grep -q "Terminé" ui.xml; then echo "FIN DE TEST AFFICHEE"; else echo "PAS DE FIN AFFICHEE"; fi
+if grep -qi "Terminé" ui.xml; then echo "FIN DE TEST AFFICHEE"; else echo "PAS DE FIN AFFICHEE"; fi
 shot alarme_fin
 tap_text "Je vais bien" || true
 sleep 2
@@ -154,9 +154,9 @@ sleep 7
 dump_ui
 shot envoi_position
 texts
-if grep -q "Position envoyée" ui.xml; then echo "DIALOGUE CONFIRMATION OK"; else echo "PAS DE CONFIRMATION"; fi
-if grep -q "Destinataires" ui.xml; then echo "DESTINATAIRES OK"; else echo "PAS DE DESTINATAIRES"; fi
-if grep -q "Résultat" ui.xml; then echo "BILAN OK"; else echo "PAS DE BILAN"; fi
+if grep -qi "Position envoyée" ui.xml; then echo "DIALOGUE CONFIRMATION OK"; else echo "PAS DE CONFIRMATION"; fi
+if grep -qi "Destinataires" ui.xml; then echo "DESTINATAIRES OK"; else echo "PAS DE DESTINATAIRES"; fi
+if grep -qi "Résultat" ui.xml; then echo "BILAN OK"; else echo "PAS DE BILAN"; fi
 tap_text "OK" || true
 sleep 1
 
