@@ -116,8 +116,6 @@ sleep 1
 
 echo "=== 6. Réglages + test alarme ==="
 adb shell input keyevent 4 || true
-sleep 1
-adb shell input keyevent 4 || true
 sleep 2
 dump_ui
 tap_text "Réglages"
