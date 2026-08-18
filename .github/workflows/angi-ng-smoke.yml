@@ -56,7 +56,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smoke-api${{ matrix.api-level }}
-          path: '*.png'
-          path: '*.txt'
-          path: '*.xml'
+          path: |
+            *.png
+            *.txt
+            *.xml
           if-no-files-found: warn
