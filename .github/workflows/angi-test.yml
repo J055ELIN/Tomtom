@@ -57,10 +57,9 @@ jobs:
           emulator-options: -no-snapshot -noaudio -no-boot-anim -no-window -gpu swiftshader_indirect
           script: |
             set -e
-            APK=ANGi-v1.1.apk
 
             echo "===== 1. Installation de l'APK ====="
-            adb install -r "$APK"
+            adb install -r ANGi-v1.1.apk
             adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || echo "grant SMS ignoré"
             adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || echo "grant loc ignoré"
             adb shell pm grant com.starfleet.angi android.permission.POST_NOTIFICATIONS || echo "grant notif ignoré (API<33)"
