@@ -82,11 +82,9 @@ jobs:
             adb pull /sdcard/ui_accueil.xml ui_accueil.xml 2>/dev/null || true
 
             echo "===== 4. Navigation onglets (barre en bas) ====="
-            for x in 108 270 432 594 756 918; do
-              adb shell input tap $x 1850 || true
-              sleep 2
-              adb exec-out screencap -p > "ecran_tab_$x.png" 2>/dev/null || true
-            done
+            # boucle sur UNE SEULE LIGNE (le script est passé à sh -c par
+            # l'action : les boucles multi-lignes cassent la syntaxe)
+            for x in 108 270 432 594 756 918; do adb shell input tap $x 1850 || true; sleep 2; adb exec-out screencap -p > "ecran_tab_$x.png" 2>/dev/null || true; done
             adb shell uiautomator dump /sdcard/ui_final.xml 2>/dev/null || true
             adb pull /sdcard/ui_final.xml ui_final.xml 2>/dev/null || true
 
