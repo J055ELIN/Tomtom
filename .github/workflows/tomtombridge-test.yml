@@ -1,0 +1,91 @@
+# ============================================================================
+# Workflow de test TomTom Bridge sur émulateur Android (GitHub Actions)
+# ReactiveCircus/android-emulator-runner (KVM sur les runners)
+#
+# Smoke test : installation + lancement sans crash + navigation onglets + logs.
+# Pas de Bluetooth sur émulateur → l'app démarre « sans montre », l'UI doit
+# fonctionner (c'est ce qu'on teste).
+# ============================================================================
+name: Test TomTom Bridge sur émulateur
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'TomTomBridge-release.apk'
+      - '.github/workflows/tomtombridge-test.yml'
+
+jobs:
+  test-tomtombridge:
+    name: TomTom Bridge sur Android ${{ matrix.api-level }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [30, 33]
+
+    steps:
+      - name: Récupérer le code (contient l'APK)
+        uses: actions/checkout@v4
+
+      - name: Activer KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Lancer l'émulateur et tester l'app
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: google_apis
+          profile: pixel_4
+          emulator-options: -no-snapshot -noaudio -no-boot-anim -no-window -gpu swiftshader_indirect
+          script: |
+            set -e
+            adb wait-for-device
+            sleep 3
+
+            echo "===== 1. Installation de l'APK ====="
+            adb install -r TomTomBridge-release.apk
+
+            echo "===== 2. Lancement + vérification process ====="
+            adb shell am start -n com.tomtombridge.app/.MainActivity
+            sleep 20
+            adb shell pidof com.tomtombridge.app && echo "PROCESS ALIVE" || echo "PROCESS MORT !"
+
+            echo "===== 3. Capture écran accueil ====="
+            adb exec-out screencap -p > ecran_accueil.png 2>/dev/null || true
+            adb shell uiautomator dump /sdcard/ui_accueil.xml 2>/dev/null || true
+            adb pull /sdcard/ui_accueil.xml ui_accueil.xml 2>/dev/null || true
+
+            echo "===== 4. Navigation onglets (barre en bas) ====="
+            # positions x approximatives sur pixel_4 (largeur 1080)
+            for x in 108 270 432 594 756 918; do
+              adb shell input tap $x 1850 || true
+              sleep 2
+              adb exec-out screencap -p > "ecran_tab_$x.png" 2>/dev/null || true
+            done
+            adb shell uiautomator dump /sdcard/ui_final.xml 2>/dev/null || true
+            adb pull /sdcard/ui_final.xml ui_final.xml 2>/dev/null || true
+
+            echo "===== 5. Logcat + bilan crash ====="
+            adb logcat -d > logcat.txt || true
+            grep -E "FATAL EXCEPTION|Process: com.tomtombridge.app.*FATAL|ANR in com.tomtombridge" logcat.txt | tail -20 || echo "AUCUN CRASH DETECTE"
+            echo "--- Journal app (démarrage) ---"
+            grep -iE "tomtombridge|bridge prêt|reconnexion|erreur" logcat.txt | head -30 || true
+
+      - name: Publier les artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-tomtombridge-api${{ matrix.api-level }}
+          path: |
+            *.png
+            *.txt
+            *.xml
+          if-no-files-found: warn
