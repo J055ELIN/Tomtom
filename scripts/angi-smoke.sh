@@ -14,6 +14,8 @@ adb install -r ANGi-v2.1.apk
 adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || true
 adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || true
 adb shell pm grant com.starfleet.angi android.permission.POST_NOTIFICATIONS || true
+adb shell pm grant com.starfleet.angi android.permission.BLUETOOTH_SCAN || true
+adb shell pm grant com.starfleet.angi android.permission.BLUETOOTH_CONNECT || true
 
 dump_ui() {
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
@@ -42,7 +44,22 @@ tap_text() { adb shell input tap $(center_of "$1"); }
 
 echo "=== 2. Lancement ==="
 adb shell am start -n com.starfleet.angi/.MainActivity
-sleep 15
+sleep 12
+dump_ui
+if grep -qi 'text="Allow"' ui.xml; then
+  echo "Dialogue de permission -> Allow"
+  XY=$(python3 - <<'PY'
+import re
+s = open('ui.xml', encoding='utf-8', errors='ignore').read()
+m = re.search(r'text="Allow"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', s, re.IGNORECASE)
+if m:
+    print((int(m.group(1)) + int(m.group(3))) // 2, (int(m.group(2)) + int(m.group(4))) // 2)
+PY
+)
+  adb shell input tap $XY || true
+  sleep 3
+fi
+sleep 3
 if adb shell pidof com.starfleet.angi; then echo "PROCESS ALIVE"; else echo "PROCESS MORT"; fi
 adb logcat -d > logcat_launch.txt || true
 echo "--- FATAL EXCEPTION au lancement ---"
