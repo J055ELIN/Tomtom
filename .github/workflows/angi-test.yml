@@ -1,0 +1,112 @@
+# ============================================================================
+# Workflow de test ANGi sur émulateur Android (GitHub Actions)
+# Utilise ReactiveCircus/android-emulator-runner (KVM activé sur les runners)
+#
+# Ce workflow :
+#   1. démarre un émulateur Android 11 (API 30, comme le Cubot Mini 2 Pro)
+#      (+ option API 33/34 pour le Pixel 9a si on décommente le matrix)
+#   2. installe ANGi-v1.1.apk, accorde les permissions SMS/localisation
+#   3. lance l'app, vérifie qu'elle ne crashe pas
+#   4. navigue dans l'UI automatiquement (uiautomator) :
+#        - écran d'accueil → capture
+#        - Réglages → Contacts d'urgence → capture
+#   5. récupère : captures d'écran, arborescence UI, logcat,
+#      et le journal ANGi_debug.log de l'app
+#   6. publie le tout en artefacts téléchargeables
+#
+# Déclencheurs : manuel (bouton « Run workflow ») ou à chaque push.
+# ============================================================================
+name: Test ANGi sur émulateur
+
+on:
+  workflow_dispatch:      # bouton « Run workflow » sur GitHub
+  push:
+    branches: [ main ]
+
+jobs:
+  test-angi:
+    name: ANGi sur Android ${{ matrix.api-level }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # API 30 = Android 11 (Cubot Mini 2 Pro)
+        # Décommente la 2e ligne pour tester aussi API 33 (Android 13, proche Pixel 9a) :
+        api-level: [30]
+        # api-level: [30, 33]
+
+    steps:
+      - name: Récupérer le code (contient l'APK)
+        uses: actions/checkout@v4
+
+      - name: Activer KVM (accélération matérielle)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Lancer l'émulateur et tester l'app
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: google_apis
+          profile: pixel_4
+          emulator-options: -no-snapshot -noaudio -no-boot-anim -no-window -gpu swiftshader_indirect
+          script: |
+            set -e
+            APK=ANGi-v1.1.apk
+
+            echo "===== 1. Installation de l'APK ====="
+            adb install -r "$APK"
+            adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || echo "grant SMS ignoré"
+            adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || echo "grant loc ignoré"
+            adb shell pm grant com.starfleet.angi android.permission.POST_NOTIFICATIONS || echo "grant notif ignoré (API<33)"
+
+            echo "===== 2. Lancement de l'app ====="
+            adb shell am start -n com.starfleet.angi/com.specialized.ride.android.MainActivity
+            sleep 25
+
+            echo "===== 3. L'app tourne-t-elle ? (pas de crash) ====="
+            adb shell pidof com.starfleet.angi && echo "PROCESS ALIVE" || echo "PROCESS MORT !"
+            adb logcat -d > logcat.txt || true
+
+            echo "===== 4. Capture écran d'accueil ====="
+            adb exec-out screencap -p > ecran_accueil.png
+            adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
+            adb pull /sdcard/ui.xml ui_accueil.xml >/dev/null 2>&1 || true
+            grep -oE 'text="[^"]*"' ui_accueil.xml 2>/dev/null | head -20 || true
+
+            echo "===== 5. Navigation : Réglages → Contacts d'urgence ====="
+            # clic sur l'icône Réglages (engrenage) puis sur « Contacts d'urgence »
+            python3 .github/scripts/ui_tap.py "Réglages" 2 || echo "pas de bouton Réglages"
+            sleep 5
+            adb exec-out screencap -p > ecran_reglages.png
+            adb shell uiautomator dump /sdcard/ui2.xml >/dev/null 2>&1 || true
+            adb pull /sdcard/ui2.xml ui_reglages.xml >/dev/null 2>&1 || true
+            python3 .github/scripts/ui_tap.py "Contacts d'urgence" 2 || echo "pas de lien contacts"
+            sleep 6
+            adb exec-out screencap -p > ecran_contacts.png
+            adb shell uiautomator dump /sdcard/ui3.xml >/dev/null 2>&1 || true
+            adb pull /sdcard/ui3.xml ui_contacts.xml >/dev/null 2>&1 || true
+            grep -oE 'text="[^"]*"' ui_contacts.xml 2>/dev/null | head -20 || true
+
+            echo "===== 6. Journal de debug de l'app (Téléchargements) ====="
+            adb shell "ls -la /sdcard/Download/ 2>/dev/null; echo '--- CONTENU ---'; cat /sdcard/Download/ANGi_debug.log 2>/dev/null" > angi_debug.txt || true
+            cat angi_debug.txt || true
+
+            echo "===== 7. Bilan crash dans logcat ====="
+            grep -E "FATAL|AndroidRuntime|ANR|NullPointer" logcat.txt | tail -20 || echo "AUCUN CRASH DETECTE"
+
+      - name: Publier les artefacts (captures, logs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-api${{ matrix.api-level }}
+          path: |
+            *.png
+            *.xml
+            *.txt
+          if-no-files-found: warn
