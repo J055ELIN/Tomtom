@@ -153,7 +153,7 @@ def main():
     # --- 3. Ajouter un contact ---
     print("\n[4] Ajout d'un contact")
     xml = dump()
-    if not tap_first(xml, "DD EMERGENCY", "ETUP YOUR", "dd emergency", "dd contact"):
+    if not tap_first(xml, "ADD EMERGENCY", "ADD CONTACT", "dd emergency"):
         print("  ❌ bouton ADD EMERGENCY CONTACTS introuvable")
     time.sleep(6)
     xml = dump()
@@ -194,34 +194,29 @@ def main():
     else:
         print("  ⚠️ Contact non visible — vérifier captures + journal")
 
-    # --- 5. Retour réglages → Envoyer ma position ---
+    # --- 5. Réglages → Envoyer ma position ---
     print("\n[6] Réglages → Envoyer ma position")
-    # revenir à l'écran des réglages : back (liste contacts) + back (écran contacts)
-    adb("shell", "input", "keyevent", "4")
-    time.sleep(3)
-    adb("shell", "input", "keyevent", "4")
-    time.sleep(4)
+    # relancer l'app proprement (les backs peuvent avoir quitté l'app)
+    adb("shell", "am", "start", "-n",
+        "com.starfleet.angi/com.specialized.ride.android.MainActivity")
+    time.sleep(12)
     xml = dump()
-    print("  Après backs:", texts(xml))
+    tap_bottom(xml, "ettings", "Settings")
+    time.sleep(6)
     found = False
-    for i in range(8):
+    for i in range(6):
         xml = dump()
-        if "osition" in xml or "Envoyer" in xml or "Surveillance" in xml:
+        if "osition" in xml or "Envoyer" in xml:
             found = True
             break
         scroll_down()
     if found:
-        # scroll léger pour révéler "Envoyer ma position" si sous "Surveillance continue"
-        for i in range(2):
-            xml = dump()
-            if "osition" in xml:
-                break
-            scroll_down()
         tap_first(xml, "osition", "Envoyer")
         time.sleep(5)
         print("  ✅ Clic « Envoyer ma position » (SMS tenté — journal attendu)")
     else:
         print("  ❌ « Envoyer ma position » introuvable")
+        print("  Textes visibles:", texts(xml))
     screenshot("08_position.png")
 
     # --- 6. Journal de l'app ---
