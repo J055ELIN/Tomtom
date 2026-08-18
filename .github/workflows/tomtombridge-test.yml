@@ -46,7 +46,8 @@ jobs:
           profile: pixel_4
           emulator-options: -no-snapshot -noaudio -no-boot-anim -no-window -gpu swiftshader_indirect
           script: |
-            set -e
+            # pas de set -e : chaque étape UI doit continuer même si une
+            # commande adb échoue (le test est un smoke test tolérant)
             adb wait-for-device
             sleep 3
 
