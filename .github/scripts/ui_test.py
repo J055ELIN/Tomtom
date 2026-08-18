@@ -55,6 +55,19 @@ def tap_first(xml, *needles):
     print(f"  ❌ INTROUVABLE: {needles}")
     return False
 
+def tap_bottom(xml, *needles):
+    """Tape le match le PLUS BAS de l'écran (pour viser la bottom-nav)."""
+    nodes = find_nodes(xml, list(needles))
+    if nodes:
+        # trier par y décroissant, prendre le plus bas
+        nodes.sort(key=lambda n: n[3], reverse=True)
+        needle, label, x, y = nodes[0]
+        print(f"  ✅ TAP BAS « {label[:60]} » ({needle}) à ({x},{y})")
+        tap_center(x, y)
+        return True
+    print(f"  ❌ INTROUVABLE (bas): {needles}")
+    return False
+
 def scroll_down(n=1):
     for _ in range(n):
         adb("shell", "input", "swipe", "540", "1800", "540", "500", "400")
@@ -96,21 +109,35 @@ def main():
     else:
         print("  ⚠️ START RIDE non trouvé — vérifier captures")
 
-    # --- 2. Réglages ---
-    print("\n[2] Réglages")
+    # --- 2. Réglages (bottom-nav) ---
+    print("\n[2] Réglages (bottom-nav)")
     xml = dump()
-    tap_first(xml, "ettings", "Settings")
+    if not tap_bottom(xml, "ettings", "Settings"):
+        tap_first(xml, "ettings", "Settings")
     time.sleep(6)
     xml = dump()
     print("  Textes:", texts(xml))
     screenshot("02_reglages_haut.png")
+    # Vérifier qu'on est bien sur l'écran des réglages ANGi (Emergency Contacts / countdown)
+    # sinon revenir et essayer l'autre bouton Settings
+    if "mergency" not in xml and "ountdown" not in xml:
+        print("  ⚠️ Écran de réglages ANGi non détecté — back puis autre Settings")
+        adb("shell", "input", "keyevent", "4")
+        time.sleep(4)
+        xml = dump()
+        if not tap_first(xml, "ettings", "Settings"):
+            tap_bottom(xml, "ettings", "Settings")
+        time.sleep(6)
+        xml = dump()
+        print("  Textes (2e essai):", texts(xml))
+        screenshot("02b_reglages_essai2.png")
 
     # scroll jusqu'à Emergency Contacts (max 8)
     print("\n[3] Scroll vers Emergency Contacts")
     found = False
     for i in range(8):
         xml = dump()
-        if "mergency" in xml or "ontact" in xml:
+        if "mergency" in xml or "ontact" in xml or "ountdown" in xml or "Envoyer" in xml:
             found = True
             break
         scroll_down()
