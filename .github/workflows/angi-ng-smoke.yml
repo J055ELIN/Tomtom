@@ -1,0 +1,62 @@
+name: Smoke test ANGi NG
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ 'ANGi-v2.0.apk', '.github/workflows/angi-ng-smoke.yml' ]
+
+jobs:
+  smoke:
+    name: Smoke ANGi NG sur Android ${{ matrix.api-level }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [30, 33]
+    steps:
+      - uses: actions/checkout@v4
+      - name: KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Émulateur + test
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: google_apis
+          profile: pixel_4
+          emulator-options: -no-snapshot -noaudio -no-boot-anim -no-window -gpu swiftshader_indirect
+          script: |
+            set -e
+            adb root || true; adb wait-for-device; sleep 3
+            echo "=== 1. Installation ==="
+            adb install -r ANGi-v2.0.apk
+            adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || true
+            adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || true
+            echo "=== 2. Lancement ==="
+            adb shell am start -n com.starfleet.angi/.MainActivity
+            sleep 20
+            adb shell pidof com.starfleet.angi && echo "PROCESS ALIVE" || echo "PROCESS MORT"
+            echo "=== 3. UI ==="
+            adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
+            adb pull /sdcard/ui.xml ui.xml >/dev/null 2>&1 || true
+            grep -oE 'text="[^"]*"' ui.xml | head -20 || true
+            adb exec-out screencap -p > ecran.png
+            echo "=== 4. Logcat ==="
+            adb logcat -d > logcat.txt || true
+            grep -E "FATAL EXCEPTION|ANR in com.starfleet" logcat.txt | tail -10 || echo "AUCUN CRASH"
+            echo "=== 5. Journal app ==="
+            adb shell "cat /sdcard/Download/ANGi_debug.log.txt 2>/dev/null" > angi_debug.txt || true
+            cat angi_debug.txt || true
+      - name: Artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-api${{ matrix.api-level }}
+          path: '*.png'
+          path: '*.txt'
+          path: '*.xml'
+          if-no-files-found: warn
