@@ -169,7 +169,7 @@ dump_ui
 shot reglages
 texts
 if grep -qi "Tester l'alarme" ui.xml; then echo "BOUTON TEST PRESENT"; else echo "PAS DE BOUTON TEST"; fi
-if grep -qi "Version 2.1" ui.xml; then echo "VERSION 2.1 OK"; else echo "VERSION ABSENTE"; fi
+if grep -qi "Version 2.2" ui.xml; then echo "VERSION 2.2 OK"; else echo "VERSION ABSENTE"; fi
 tap_text "Tester l'alarme (aucun SMS)"
 sleep 3
 dump_ui
