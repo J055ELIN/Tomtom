@@ -10,7 +10,7 @@ sleep 3
 adb emu geo fix 2.288156 49.872177 || true
 
 echo "=== 1. Installation ==="
-adb install -r ANGi-v2.3.apk
+adb install -r ANGi-v2.4.apk
 adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || true
 adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || true
 adb shell pm grant com.starfleet.angi android.permission.POST_NOTIFICATIONS || true
@@ -85,6 +85,9 @@ tap_text() { XY=$(center_of "$1") && adb shell input tap $XY; }
 echo "=== 2. Lancement ==="
 adb shell am start -n com.starfleet.angi/.MainActivity
 sleep 12
+echo "--- Fichiers de log (doit etre 1 seul) ---"
+adb shell "ls /sdcard/Download/ | grep -i angi" || echo "AUCUN FICHIER ANGI"
+adb shell "ls /sdcard/Download/ | grep -ci angi" || true
 dismiss_dialogs
 sleep 3
 if adb shell pidof com.starfleet.angi; then echo "PROCESS ALIVE"; else echo "PROCESS MORT"; fi
@@ -185,7 +188,7 @@ dump_ui
 shot reglages
 texts
 if grep -qi "Tester l'alarme" ui.xml; then echo "BOUTON TEST PRESENT"; else echo "PAS DE BOUTON TEST"; fi
-if grep -qi "Version 2.3" ui.xml; then echo "VERSION 2.3 OK"; else echo "VERSION ABSENTE"; fi
+if grep -qi "Version 2.4" ui.xml; then echo "VERSION 2.4 OK"; else echo "VERSION ABSENTE"; fi
 tap_text "Tester l'alarme (aucun SMS)" || true
 sleep 3
 dump_ui
