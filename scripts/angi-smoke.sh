@@ -67,7 +67,11 @@ m = re.search(r'text="[^"]*' + needle + r'[^"]*"[^>]*bounds="\[(\d+),(\d+)\]\[(\
 if not m:
     m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"[^>]*text="[^"]*' + needle + r'[^"]*"', s, re.IGNORECASE)
 if not m:
-    sys.exit(2)
+    import sys as _s
+    txts = re.findall(r'text="([^"]*)"', s)
+    print('CENTER_NOT_FOUND for [' + sys.argv[1] + ']', file=sys.stderr)
+    print('UI_TEXTES: ' + ' | '.join(t for t in txts if t)[:400], file=sys.stderr)
+    _s.exit(2)
 print((int(m.group(1)) + int(m.group(3))) // 2, (int(m.group(2)) + int(m.group(4))) // 2)
 PY
 }
