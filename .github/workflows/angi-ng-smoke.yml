@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
-    paths: [ 'ANGi-v2.16.apk', 'scripts/**', '.github/workflows/angi-ng-smoke.yml' ]
+    paths: [ 'ANGi-v2.17.apk', 'scripts/**', '.github/workflows/angi-ng-smoke.yml' ]
 
 jobs:
   smoke:
