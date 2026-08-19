@@ -10,7 +10,7 @@ sleep 3
 adb emu geo fix 2.288156 49.872177 || true
 
 echo "=== 1. Installation ==="
-adb install -r ANGi-v2.6.apk
+adb install -r ANGi-v2.7.apk
 adb shell dumpsys package com.starfleet.angi | grep -E "versionCode|versionName" | head -2
 adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || true
 adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || true
@@ -133,6 +133,16 @@ adb shell "cat /sdcard/Download/ANGi_debug.log.txt 2>/dev/null" > scan_journal.t
 grep -E "\[SCAN\]|\[BLE\]|\[SDK\]" scan_journal.txt | tail -8 || echo "PAS DE LIGNES SCAN/BLE/SDK"
 to_main
 
+echo "=== 3.7. Demarrer la surveillance (service foreground) ==="
+tap_text "Démarrer la surveillance" || true
+sleep 5
+adb shell dumpsys activity services com.starfleet.angi | grep -E "SurveillanceService" | head -2 || echo "SERVICE INTROUVABLE"
+adb shell "cat /sdcard/Download/ANGi_debug.log.txt 2>/dev/null" | grep -E "MONITOR|SESSION" | tail -5 || true
+echo "--- arret de la surveillance ---"
+tap_text "Arrêter la surveillance" || true
+sleep 2
+to_main
+
 echo "=== 4. Ajout d'un contact ==="
 start_act ContactsActivity
 tap_text "Ajouter un contact" || true
@@ -189,7 +199,7 @@ dump_ui
 shot reglages
 texts
 if grep -qi "Tester l'alarme" ui.xml; then echo "BOUTON TEST PRESENT"; else echo "PAS DE BOUTON TEST"; fi
-if grep -qi "Version 2.6" ui.xml; then echo "VERSION 2.6 OK"; else echo "VERSION ABSENTE"; fi
+if grep -qi "Version 2.7" ui.xml; then echo "VERSION 2.7 OK"; else echo "VERSION ABSENTE"; fi
 tap_text "Tester l'alarme (aucun SMS)" || true
 sleep 3
 dump_ui
