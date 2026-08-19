@@ -26,7 +26,12 @@ dump_ui() {
 }
 shot() { adb exec-out screencap -p > "ecran_$1.png" || true; }
 texts() { grep -oE 'text="[^"]*"' ui.xml | head -14 || true; }
-to_main() { adb shell am start -n com.starfleet.angi/.MainActivity; sleep 2; }
+to_main() {
+  adb shell input keyevent 4 || true
+  sleep 1
+  adb shell am start -f 0x24000000 -n com.starfleet.angi/.MainActivity || true
+  sleep 2
+}
 start_act() { adb shell am start -n "com.starfleet.angi/.$1"; sleep 3; }
 
 # Ferme les dialogues systeme eventuels (permissions, ANR)
