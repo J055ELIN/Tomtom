@@ -21,6 +21,31 @@ dump_ui() {
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
   adb pull /sdcard/ui.xml ui.xml >/dev/null 2>&1 || true
 }
+# Ferme les dialogues systeme eventuels (permissions, ANR)
+dismiss_dialogs() {
+  for i in 1 2 3; do
+    dump_ui
+    grep -qi 'text="Allow"' ui.xml || grep -qi 'text="Allow only"\|text="Only this time"\|text="While using the app"' ui.xml || break
+    XY=$(python3 - <<'PY'
+import re
+s = open('ui.xml', encoding='utf-8', errors='ignore').read()
+for pat in [r'text="Allow only"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',
+            r'text="Allow"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',
+            r'text="While using the app"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',
+            r'text="Only this time"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"']:
+    m = re.search(pat, s, re.IGNORECASE)
+    if m:
+        print((int(m.group(1)) + int(m.group(3))) // 2, (int(m.group(2)) + int(m.group(4))) // 2)
+        break
+PY
+)
+    if [ -n "$XY" ]; then
+      echo "Dialogue systeme -> clic ($XY)"
+      adb shell input tap $XY || true
+      sleep 2
+    fi
+  done
+}
 shot() { adb exec-out screencap -p > "ecran_$1.png"; }
 texts() { grep -oE 'text="[^"]*"' ui.xml | head -14 || true; }
 
@@ -46,19 +71,7 @@ echo "=== 2. Lancement ==="
 adb shell am start -n com.starfleet.angi/.MainActivity
 sleep 12
 dump_ui
-if grep -qi 'text="Allow"' ui.xml; then
-  echo "Dialogue de permission -> Allow"
-  XY=$(python3 - <<'PY'
-import re
-s = open('ui.xml', encoding='utf-8', errors='ignore').read()
-m = re.search(r'text="Allow"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', s, re.IGNORECASE)
-if m:
-    print((int(m.group(1)) + int(m.group(3))) // 2, (int(m.group(2)) + int(m.group(4))) // 2)
-PY
-)
-  adb shell input tap $XY || true
-  sleep 3
-fi
+dismiss_dialogs
 sleep 3
 if adb shell pidof com.starfleet.angi; then echo "PROCESS ALIVE"; else echo "PROCESS MORT"; fi
 adb logcat -d > logcat_launch.txt || true
@@ -77,8 +90,8 @@ if grep -q 'android.webkit.WebView' ui.xml; then echo "WEBVIEW CARTE PRESENT"; e
 shot carte
 
 echo "=== 3.5. Ecran Appairage (scan BLE) ==="
-dump_ui
-tap_text "Appairer un capteur"
+dismiss_dialogs
+tap_text "Appairer un capteur" || true
 sleep 4
 dump_ui
 shot appairage
@@ -90,7 +103,8 @@ adb shell input keyevent 4 || true
 sleep 1
 
 echo "=== 4. Ajout d'un contact ==="
-tap_text "Contacts d'urgence"
+dismiss_dialogs
+tap_text "Contacts d'urgence" || true
 sleep 3
 dump_ui
 shot contacts
@@ -145,6 +159,7 @@ tap_text "Annuler" || true
 sleep 1
 
 echo "=== 6. Réglages + test alarme ==="
+dismiss_dialogs
 adb shell input keyevent 4 || true
 sleep 2
 dump_ui
@@ -177,8 +192,8 @@ adb shell input keyevent 4 || true
 sleep 1
 
 echo "=== 7. Envoyer ma position (confirmation) ==="
-dump_ui
-tap_text "Envoyer ma position"
+dismiss_dialogs
+tap_text "Envoyer ma position" || true
 sleep 7
 dump_ui
 shot envoi_position
