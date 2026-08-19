@@ -21,6 +21,12 @@ dump_ui() {
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
   adb pull /sdcard/ui.xml ui.xml >/dev/null 2>&1 || true
 }
+# Retour fiable a l'ecran principal (MainActivity au premier plan)
+to_main() {
+  adb shell am start -n com.starfleet.angi/.MainActivity
+  sleep 2
+}
+
 # Ferme les dialogues systeme eventuels (permissions, ANR)
 dismiss_dialogs() {
   for i in 1 2 3; do
@@ -99,11 +105,11 @@ texts
 if grep -qi "Appairer un capteur" ui.xml; then echo "ECRAN APPAREILAGE OK"; else echo "PAS D'ECRAN APPAREILAGE"; fi
 adb shell "cat /sdcard/Download/ANGi_debug.log.txt 2>/dev/null" > scan_journal.txt || true
 grep -E "\[SCAN\]|\[BLE\]|\[SDK\]" scan_journal.txt | tail -8 || echo "PAS DE LIGNES SCAN/BLE/SDK"
-adb shell input keyevent 4 || true
-sleep 1
+to_main
 
 echo "=== 4. Ajout d'un contact ==="
 dismiss_dialogs
+to_main
 tap_text "Contacts d'urgence" || true
 sleep 3
 dump_ui
@@ -160,9 +166,7 @@ sleep 1
 
 echo "=== 6. Réglages + test alarme ==="
 dismiss_dialogs
-adb shell input keyevent 4 || true
-sleep 2
-dump_ui
+to_main
 tap_text "Réglages"
 sleep 3
 dump_ui
@@ -193,6 +197,7 @@ sleep 1
 
 echo "=== 7. Envoyer ma position (confirmation) ==="
 dismiss_dialogs
+to_main
 tap_text "Envoyer ma position" || true
 sleep 7
 dump_ui
