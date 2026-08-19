@@ -10,7 +10,7 @@ sleep 3
 adb emu geo fix 2.288156 49.872177 || true
 
 echo "=== 1. Installation ==="
-adb install -r ANGi-v2.1.apk
+adb install -r ANGi-v2.2.apk
 adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || true
 adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || true
 adb shell pm grant com.starfleet.angi android.permission.POST_NOTIFICATIONS || true
@@ -75,6 +75,19 @@ dump_ui
 grep -oE 'text="Position : [^"]*"' ui.xml || echo "PAS DE POSITION AFFICHEE"
 if grep -q 'android.webkit.WebView' ui.xml; then echo "WEBVIEW CARTE PRESENT"; else echo "PAS DE WEBVIEW"; fi
 shot carte
+
+echo "=== 3.5. Ecran Appairage (scan BLE) ==="
+dump_ui
+tap_text "Appairer un capteur"
+sleep 4
+dump_ui
+shot appairage
+texts
+if grep -qi "Appairer un capteur" ui.xml; then echo "ECRAN APPAREILAGE OK"; else echo "PAS D'ECRAN APPAREILAGE"; fi
+adb shell "cat /sdcard/Download/ANGi_debug.log.txt 2>/dev/null" > scan_journal.txt || true
+grep -E "\[SCAN\]|\[BLE\]|\[SDK\]" scan_journal.txt | tail -8 || echo "PAS DE LIGNES SCAN/BLE/SDK"
+adb shell input keyevent 4 || true
+sleep 1
 
 echo "=== 4. Ajout d'un contact ==="
 tap_text "Contacts d'urgence"
