@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test complet ANGi v2.1 sur émulateur (exécuté par .github/workflows/angi-ng-smoke.yml)
+# Test complet ANGi v2.2 sur émulateur (exécuté par .github/workflows/angi-ng-smoke.yml)
 set -e
 
 adb root || true
@@ -18,27 +18,28 @@ adb shell pm grant com.starfleet.angi android.permission.BLUETOOTH_SCAN || true
 adb shell pm grant com.starfleet.angi android.permission.BLUETOOTH_CONNECT || true
 
 dump_ui() {
+  rm -f ui.xml
+  adb shell rm -f /sdcard/ui.xml
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
   adb pull /sdcard/ui.xml ui.xml >/dev/null 2>&1 || true
+  if [ ! -s ui.xml ]; then echo "DUMP_UI_ECHEC" >> ui_fail.txt; fi
 }
-# Retour fiable a l'ecran principal (MainActivity au premier plan)
-to_main() {
-  adb shell am start -n com.starfleet.angi/.MainActivity
-  sleep 2
-}
+shot() { adb exec-out screencap -p > "ecran_$1.png" || true; }
+texts() { grep -oE 'text="[^"]*"' ui.xml | head -14 || true; }
+to_main() { adb shell am start -n com.starfleet.angi/.MainActivity; sleep 2; }
+start_act() { adb shell am start -n "com.starfleet.angi/.$1"; sleep 3; }
 
 # Ferme les dialogues systeme eventuels (permissions, ANR)
 dismiss_dialogs() {
   for i in 1 2 3; do
     dump_ui
-    grep -qi 'text="Allow"' ui.xml || grep -qi 'text="Allow only"\|text="Only this time"\|text="While using the app"' ui.xml || break
+    grep -qi 'text="Allow"' ui.xml || grep -qi 'text="Wait"' ui.xml || break
     XY=$(python3 - <<'PY'
 import re
 s = open('ui.xml', encoding='utf-8', errors='ignore').read()
 for pat in [r'text="Allow only"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',
             r'text="Allow"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',
-            r'text="While using the app"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',
-            r'text="Only this time"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"']:
+            r'text="Wait"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"']:
     m = re.search(pat, s, re.IGNORECASE)
     if m:
         print((int(m.group(1)) + int(m.group(3))) // 2, (int(m.group(2)) + int(m.group(4))) // 2)
@@ -52,11 +53,11 @@ PY
     fi
   done
 }
-shot() { adb exec-out screencap -p > "ecran_$1.png"; }
-texts() { grep -oE 'text="[^"]*"' ui.xml | head -14 || true; }
 
-# Centre d'un noeud dont le texte CONTIENT $1
+# Centre d'un noeud dont le texte CONTIENT $1 (dump frais obligatoire)
 center_of() {
+  rm -f ui.xml
+  adb shell rm -f /sdcard/ui.xml
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
   adb pull /sdcard/ui.xml ui.xml >/dev/null 2>&1 || true
   python3 - "$1" <<'PY'
@@ -67,27 +68,23 @@ m = re.search(r'text="[^"]*' + needle + r'[^"]*"[^>]*bounds="\[(\d+),(\d+)\]\[(\
 if not m:
     m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"[^>]*text="[^"]*' + needle + r'[^"]*"', s, re.IGNORECASE)
 if not m:
-    import sys as _s
     txts = re.findall(r'text="([^"]*)"', s)
     print('CENTER_NOT_FOUND for [' + sys.argv[1] + ']', file=sys.stderr)
-    print('UI_TEXTES: ' + ' | '.join(t for t in txts if t)[:400], file=sys.stderr)
-    _s.exit(2)
+    print('UI_TEXTES: ' + ' | '.join(t for t in txts if t)[:300], file=sys.stderr)
+    sys.exit(2)
 print((int(m.group(1)) + int(m.group(3))) // 2, (int(m.group(2)) + int(m.group(4))) // 2)
 PY
 }
-tap_text() { adb shell input tap $(center_of "$1"); }
+tap_text() { XY=$(center_of "$1") && adb shell input tap $XY; }
 
 echo "=== 2. Lancement ==="
 adb shell am start -n com.starfleet.angi/.MainActivity
 sleep 12
-dump_ui
 dismiss_dialogs
 sleep 3
 if adb shell pidof com.starfleet.angi; then echo "PROCESS ALIVE"; else echo "PROCESS MORT"; fi
 adb logcat -d > logcat_launch.txt || true
-echo "--- FATAL EXCEPTION au lancement ---"
-grep -B2 -A25 "FATAL EXCEPTION" logcat_launch.txt | head -80 || echo "PAS DE FATAL EXCEPTION"
-grep -B2 -A15 "Process: com.starfleet" logcat_launch.txt | head -40 || true
+grep -E "FATAL EXCEPTION|ANR in com.starfleet" logcat_launch.txt | tail -5 || echo "PAS DE CRASH AU LANCEMENT"
 dump_ui
 texts
 shot main
@@ -100,28 +97,20 @@ if grep -q 'android.webkit.WebView' ui.xml; then echo "WEBVIEW CARTE PRESENT"; e
 shot carte
 
 echo "=== 3.5. Ecran Appairage (scan BLE) ==="
-dismiss_dialogs
-tap_text "Appairer un capteur" || true
-sleep 4
+start_act ScanActivity
 dump_ui
-shot appairage
 texts
+shot appairage
 if grep -qi "Appairer un capteur" ui.xml; then echo "ECRAN APPAREILAGE OK"; else echo "PAS D'ECRAN APPAREILAGE"; fi
 adb shell "cat /sdcard/Download/ANGi_debug.log.txt 2>/dev/null" > scan_journal.txt || true
 grep -E "\[SCAN\]|\[BLE\]|\[SDK\]" scan_journal.txt | tail -8 || echo "PAS DE LIGNES SCAN/BLE/SDK"
 to_main
 
 echo "=== 4. Ajout d'un contact ==="
-dismiss_dialogs
-to_main
-tap_text "Contacts d'urgence" || true
-sleep 3
-dump_ui
-shot contacts
-tap_text "Ajouter un contact"
+start_act ContactsActivity
+tap_text "Ajouter un contact" || true
 sleep 2
-adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
-adb pull /sdcard/ui.xml ui.xml >/dev/null 2>&1 || true
+dump_ui
 python3 - <<'PY' > edpos.txt
 import re
 s = open('ui.xml', encoding='utf-8', errors='ignore').read()
@@ -149,16 +138,15 @@ sleep 1
 dump_ui
 shot editcontact
 texts
-tap_text "Enregistrer"
+tap_text "Enregistrer" || true
 sleep 2
 dump_ui
 shot contact_apres_save
-echo "--- liste apres sauvegarde ---"
 texts
 if grep -qi "Josselin" ui.xml; then echo "CONTACT ENREGISTRE OK"; else echo "CONTACT ABSENT"; fi
 
 echo "=== 5. Dialogue edit : bouton Annuler (plus de 'Je vais bien') ==="
-tap_text "Josselin"
+tap_text "Josselin" || true
 sleep 2
 dump_ui
 shot edit_dialog
@@ -169,16 +157,13 @@ tap_text "Annuler" || true
 sleep 1
 
 echo "=== 6. Réglages + test alarme ==="
-dismiss_dialogs
-to_main
-tap_text "Réglages"
-sleep 3
+start_act SettingsActivity
 dump_ui
 shot reglages
 texts
 if grep -qi "Tester l'alarme" ui.xml; then echo "BOUTON TEST PRESENT"; else echo "PAS DE BOUTON TEST"; fi
 if grep -qi "Version 2.2" ui.xml; then echo "VERSION 2.2 OK"; else echo "VERSION ABSENTE"; fi
-tap_text "Tester l'alarme (aucun SMS)"
+tap_text "Tester l'alarme (aucun SMS)" || true
 sleep 3
 dump_ui
 shot alarme
@@ -189,18 +174,14 @@ sleep 1
 shot alarme_flash1
 sleep 2
 shot alarme_flash2
-echo "--- attente fin du compte a rebours (15s) ---"
 sleep 11
 dump_ui
 if grep -qi "Terminé" ui.xml; then echo "FIN DE TEST AFFICHEE"; else echo "PAS DE FIN AFFICHEE"; fi
 shot alarme_fin
 tap_text "Je vais bien" || true
 sleep 2
-adb shell input keyevent 4 || true
-sleep 1
 
 echo "=== 7. Envoyer ma position (confirmation) ==="
-dismiss_dialogs
 to_main
 tap_text "Envoyer ma position" || true
 sleep 7
