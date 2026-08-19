@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
-    paths: [ 'ANGi-v2.2.apk', 'scripts/**', '.github/workflows/angi-ng-smoke.yml' ]
+    paths: [ 'ANGi-v2.3.apk', 'scripts/**', '.github/workflows/angi-ng-smoke.yml' ]
 
 jobs:
   smoke:
@@ -17,6 +17,8 @@ jobs:
         api-level: [30, 33]
     steps:
       - uses: actions/checkout@v4
+      - name: Pillow pour analyse d'image
+        run: pip install pillow -q || true
       - name: KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

@@ -10,7 +10,7 @@ sleep 3
 adb emu geo fix 2.288156 49.872177 || true
 
 echo "=== 1. Installation ==="
-adb install -r ANGi-v2.2.apk
+adb install -r ANGi-v2.3.apk
 adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || true
 adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || true
 adb shell pm grant com.starfleet.angi android.permission.POST_NOTIFICATIONS || true
@@ -100,6 +100,24 @@ dump_ui
 grep -oE 'text="Position : [^"]*"' ui.xml || echo "PAS DE POSITION AFFICHEE"
 if grep -q 'android.webkit.WebView' ui.xml; then echo "WEBVIEW CARTE PRESENT"; else echo "PAS DE WEBVIEW"; fi
 shot carte
+python3 - <<'PY'
+from PIL import Image
+im = Image.open('ecran_carte.png').convert('RGB')
+w, h = im.size
+zone = im.crop((0, int(h*0.12), w, int(h*0.45)))
+px = list(zone.getdata())
+n = max(len(px), 1)
+gris_fond = sum(1 for p in px if abs(p[0]-232) < 12 and abs(p[1]-232) < 12 and abs(p[2]-232) < 12)
+colores = sum(1 for p in px if max(p) - min(p) > 28)
+print(f"ANALYSE_CARTE: gris_fond={100*gris_fond//n}% colores={100*colores//n}%")
+if colores * 100 // n > 1:
+    print("CARTE: TUILES OSM AFFICHEES")
+elif gris_fond * 100 // n > 10:
+    print("CARTE: HTML AFFICHE MAIS PAS DE TUILES (probablement pas d'Internet)")
+else:
+    print("CARTE: NON AFFICHEE (HTML vide)")
+PY
+adb logcat -d | grep -iE "chromium|net::ERR|tile.openstreetmap" | tail -8 || true
 
 echo "=== 3.5. Ecran Appairage (scan BLE) ==="
 start_act ScanActivity
@@ -167,7 +185,7 @@ dump_ui
 shot reglages
 texts
 if grep -qi "Tester l'alarme" ui.xml; then echo "BOUTON TEST PRESENT"; else echo "PAS DE BOUTON TEST"; fi
-if grep -qi "Version 2.2" ui.xml; then echo "VERSION 2.2 OK"; else echo "VERSION ABSENTE"; fi
+if grep -qi "Version 2.3" ui.xml; then echo "VERSION 2.3 OK"; else echo "VERSION ABSENTE"; fi
 tap_text "Tester l'alarme (aucun SMS)" || true
 sleep 3
 dump_ui
