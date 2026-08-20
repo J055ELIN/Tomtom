@@ -10,7 +10,7 @@ sleep 3
 adb emu geo fix 2.288156 49.872177 || true
 
 echo "=== 1. Installation ==="
-adb install -r ANGi-v2.24.apk
+adb install -r ANGi-v2.25.apk
 adb shell dumpsys package com.starfleet.angi | grep -E "versionCode|versionName" | head -2
 adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || true
 adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || true
@@ -199,7 +199,7 @@ dump_ui
 shot reglages
 texts
 if grep -qi "Tester l'alarme" ui.xml; then echo "BOUTON TEST PRESENT"; else echo "PAS DE BOUTON TEST"; fi
-if grep -qi "Version 2.24" ui.xml; then echo "VERSION 2.24 OK"; else echo "VERSION ABSENTE"; fi
+if grep -qi "Version 2.25" ui.xml; then echo "VERSION 2.25 OK"; else echo "VERSION ABSENTE"; fi
 tap_text "Tester l'alarme (aucun SMS)" || true
 sleep 3
 dump_ui
