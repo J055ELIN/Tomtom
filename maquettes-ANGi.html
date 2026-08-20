@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANGi — Maquettes graphiques</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:#0b0d12; color:#eaeef3; padding:24px 16px 60px; }
+  h1 { font-size:22px; font-weight:800; letter-spacing:-0.5px; }
+  .sub { color:#9aa3b2; font-size:13px; margin:6px 0 18px; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:22px; }
+  .tab { padding:10px 16px; border-radius:12px; border:1px solid #2a3140; background:#151a22; color:#cfd6e2; cursor:pointer; font-size:13px; font-weight:600; }
+  .tab.active { background:#ED1C24; border-color:#ED1C24; color:#fff; }
+  .theme { display:none; }
+  .theme.show { display:block; }
+  .theme-title { font-size:17px; font-weight:800; margin:4px 0 4px; }
+  .theme-desc { font-size:12.5px; color:#9aa3b2; margin-bottom:16px; max-width:900px; line-height:1.5; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:18px; }
+  .screen-label { font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#7d8698; margin:0 0 8px 4px; }
+  /* Cadre téléphone */
+  .phone { width:100%; max-width:250px; margin:0 auto; border-radius:34px; padding:12px; position:relative; }
+  .phone .notch { width:96px; height:22px; border-radius:0 0 14px 14px; background:#000; margin:-2px auto 8px; }
+  .screen { border-radius:24px; overflow:hidden; min-height:520px; display:flex; flex-direction:column; position:relative; }
+  .screen-inner { padding:18px 16px 14px; display:flex; flex-direction:column; flex:1; gap:10px; }
+
+  /* ============ THEME 1 : SPORT NIGHT ============ */
+  .t1 .phone { background:#0a0c10; border:1px solid #232a36; }
+  .t1 .screen { background:linear-gradient(160deg,#13161c 0%, #0d0f14 100%); color:#eef1f6; }
+  .t1 .card { background:#1b212b; border:1px solid #262e3b; border-radius:16px; padding:12px; }
+  .t1 .brand { font-size:26px; font-weight:900; letter-spacing:-0.5px; color:#fff; }
+  .t1 .brand span { color:#ED1C24; }
+  .t1 .pill { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; padding:4px 10px; border-radius:999px; }
+  .t1 .pill .dot { width:7px; height:7px; border-radius:50%; background:#37d67a; box-shadow:0 0 8px #37d67a; }
+  .t1 .pill.ok { background:rgba(55,214,122,.12); color:#5ee79a; border:1px solid rgba(55,214,122,.35); }
+  .t1 .map { height:118px; border-radius:14px; background:
+      linear-gradient(180deg,#2a3b2e 0%,#35473a 40%,#3c4b3c 100%); position:relative; overflow:hidden; border:1px solid #2b343f; }
+  .t1 .map .road { position:absolute; background:#0f1511; border-radius:6px; opacity:.85; }
+  .t1 .map .pin { position:absolute; left:50%; top:46%; transform:translate(-50%,-100%); width:0; height:0;
+      border-left:9px solid transparent; border-right:9px solid transparent; border-bottom:18px solid #ED1C24; filter:drop-shadow(0 2px 4px rgba(0,0,0,.5)); }
+  .t1 .map .pin::after { content:""; position:absolute; left:-4px; top:14px; width:8px; height:8px; border-radius:50%; background:#ED1C24; }
+  .t1 .map .loc { position:absolute; bottom:6px; left:8px; font-size:9px; color:#cfe3d2; background:rgba(0,0,0,.45); padding:2px 8px; border-radius:8px; }
+  .t1 .btn { border:none; border-radius:13px; padding:12px; font-size:13.5px; font-weight:700; cursor:pointer; width:100%; }
+  .t1 .btn.primary { background:linear-gradient(135deg,#ED1C24,#c4111a); color:#fff; box-shadow:0 6px 16px rgba(237,28,36,.35); }
+  .t1 .btn.ghost { background:#1b212b; color:#dfe5ee; border:1px solid #2b3340; }
+  .t1 .btn:disabled { opacity:.45; }
+  .t1 .meta { font-size:10.5px; color:#8b94a5; }
+  .t1 .row { display:flex; align-items:center; justify-content:space-between; padding:10px 2px; border-bottom:1px solid #232a35; }
+  .t1 .row:last-child { border-bottom:none; }
+  .t1 .sw { width:40px; height:22px; border-radius:999px; background:#ED1C24; position:relative; }
+  .t1 .sw::after { content:""; position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:#fff; }
+  .t1 .sw.off { background:#333c4a; }
+  .t1 .sw.off::after { right:auto; left:2px; }
+  .t1 .contact { display:flex; align-items:center; gap:10px; padding:10px; background:#1b212b; border-radius:14px; }
+  .t1 .avatar { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#ED1C24,#ff7a45); display:flex; align-items:center; justify-content:center; font-weight:800; color:#fff; font-size:13px; }
+  .t1 .alarm { background:linear-gradient(160deg,#C62828 0%, #7f1010 100%); color:#fff; }
+  .t1 .alarm .big { font-size:64px; font-weight:900; text-align:center; letter-spacing:-2px; text-shadow:0 4px 18px rgba(0,0,0,.35); }
+  .t1 .alarm .title { font-size:21px; font-weight:800; text-align:center; }
+  .t1 .alarm .btn.white { background:#fff; color:#8f1212; }
+  .t1 .alarm .btn.outline { background:transparent; border:1.5px solid rgba(255,255,255,.6); color:#fff; }
+
+  /* ============ THEME 2 : CLAIR MINIMAL ============ */
+  .t2 .phone { background:#e8eaee; border:1px solid #d7dae0; }
+  .t2 .screen { background:#f7f8fa; color:#14171c; }
+  .t2 .card { background:#ffffff; border-radius:16px; padding:12px; box-shadow:0 2px 10px rgba(20,30,50,.07); }
+  .t2 .brand { font-size:25px; font-weight:900; letter-spacing:-0.5px; color:#14171c; }
+  .t2 .brand span { color:#ED1C24; }
+  .t2 .pill { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; padding:4px 10px; border-radius:999px; }
+  .t2 .pill .dot { width:7px; height:7px; border-radius:50%; background:#2E7D32; }
+  .t2 .pill.ok { background:#e8f5e9; color:#1b5e20; }
+  .t2 .map { height:118px; border-radius:14px; background:linear-gradient(180deg,#e3ebf1,#dbe4ec); position:relative; overflow:hidden; }
+  .t2 .map .road { position:absolute; background:#ffffff; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .t2 .map .pin { position:absolute; left:50%; top:46%; transform:translate(-50%,-100%); width:0; height:0;
+      border-left:9px solid transparent; border-right:9px solid transparent; border-bottom:18px solid #ED1C24; filter:drop-shadow(0 2px 3px rgba(0,0,0,.25)); }
+  .t2 .map .pin::after { content:""; position:absolute; left:-4px; top:14px; width:8px; height:8px; border-radius:50%; background:#ED1C24; }
+  .t2 .map .loc { position:absolute; bottom:6px; left:8px; font-size:9px; color:#3f4a57; background:rgba(255,255,255,.85); padding:2px 8px; border-radius:8px; font-weight:600; }
+  .t2 .btn { border:none; border-radius:13px; padding:12px; font-size:13.5px; font-weight:700; cursor:pointer; width:100%; }
+  .t2 .btn.primary { background:#ED1C24; color:#fff; box-shadow:0 5px 14px rgba(237,28,36,.3); }
+  .t2 .btn.ghost { background:#fff; color:#2b313a; border:1px solid #e2e5ea; box-shadow:0 1px 4px rgba(0,0,0,.04); }
+  .t2 .btn:disabled { opacity:.45; }
+  .t2 .meta { font-size:10.5px; color:#7a8290; }
+  .t2 .row { display:flex; align-items:center; justify-content:space-between; padding:10px 2px; border-bottom:1px solid #eceef2; }
+  .t2 .row:last-child { border-bottom:none; }
+  .t2 .sw { width:40px; height:22px; border-radius:999px; background:#ED1C24; position:relative; }
+  .t2 .sw::after { content:""; position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+  .t2 .sw.off { background:#d4d8de; }
+  .t2 .sw.off::after { right:auto; left:2px; }
+  .t2 .contact { display:flex; align-items:center; gap:10px; padding:10px; background:#fff; border-radius:14px; box-shadow:0 1px 6px rgba(20,30,50,.06); }
+  .t2 .avatar { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#ED1C24,#ff7a45); display:flex; align-items:center; justify-content:center; font-weight:800; color:#fff; font-size:13px; }
+  .t2 .alarm { background:linear-gradient(160deg,#d32f2f 0%, #8e1414 100%); color:#fff; }
+  .t2 .alarm .big { font-size:64px; font-weight:900; text-align:center; letter-spacing:-2px; }
+  .t2 .alarm .title { font-size:21px; font-weight:800; text-align:center; }
+  .t2 .alarm .btn.white { background:#fff; color:#8f1212; }
+  .t2 .alarm .btn.outline { background:rgba(255,255,255,.14); border:1.5px solid rgba(255,255,255,.55); color:#fff; }
+
+  /* ============ THEME 3 : VELO NATURE ============ */
+  .t3 .phone { background:#e2e8dc; border:1px solid #cdd8c4; }
+  .t3 .screen { background:linear-gradient(180deg,#f6f9f3 0%, #eef4e9 100%); color:#17251b; }
+  .t3 .card { background:#ffffff; border-radius:18px; padding:12px; box-shadow:0 2px 8px rgba(40,70,40,.08); }
+  .t3 .brand { font-size:25px; font-weight:900; letter-spacing:-0.5px; color:#14351f; }
+  .t3 .brand span { color:#1B7A43; }
+  .t3 .pill { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; padding:4px 10px; border-radius:999px; }
+  .t3 .pill .dot { width:7px; height:7px; border-radius:50%; background:#2e9e5b; }
+  .t3 .pill.ok { background:#e3f4e9; color:#145a30; }
+  .t3 .map { height:118px; border-radius:16px; background:linear-gradient(180deg,#cfe3c8,#bcd8b3); position:relative; overflow:hidden; }
+  .t3 .map .road { position:absolute; background:#fdf9ee; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .t3 .map .pin { position:absolute; left:50%; top:46%; transform:translate(-50%,-100%); width:0; height:0;
+      border-left:9px solid transparent; border-right:9px solid transparent; border-bottom:18px solid #1B7A43; filter:drop-shadow(0 2px 3px rgba(0,0,0,.25)); }
+  .t3 .map .pin::after { content:""; position:absolute; left:-4px; top:14px; width:8px; height:8px; border-radius:50%; background:#1B7A43; }
+  .t3 .map .loc { position:absolute; bottom:6px; left:8px; font-size:9px; color:#33563b; background:rgba(255,255,255,.85); padding:2px 8px; border-radius:8px; font-weight:600; }
+  .t3 .btn { border:none; border-radius:14px; padding:12px; font-size:13.5px; font-weight:700; cursor:pointer; width:100%; }
+  .t3 .btn.primary { background:linear-gradient(135deg,#1B7A43,#136133); color:#fff; box-shadow:0 5px 14px rgba(27,122,67,.3); }
+  .t3 .btn.ghost { background:#fff; color:#234d2e; border:1px solid #dbe5d3; }
+  .t3 .btn:disabled { opacity:.45; }
+  .t3 .meta { font-size:10.5px; color:#6b8271; }
+  .t3 .row { display:flex; align-items:center; justify-content:space-between; padding:10px 2px; border-bottom:1px solid #e6eee1; }
+  .t3 .row:last-child { border-bottom:none; }
+  .t3 .sw { width:40px; height:22px; border-radius:999px; background:#1B7A43; position:relative; }
+  .t3 .sw::after { content:""; position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:#fff; }
+  .t3 .sw.off { background:#c9d6c2; }
+  .t3 .sw.off::after { right:auto; left:2px; }
+  .t3 .contact { display:flex; align-items:center; gap:10px; padding:10px; background:#fff; border-radius:16px; box-shadow:0 1px 6px rgba(40,70,40,.06); }
+  .t3 .avatar { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#1B7A43,#57b26b); display:flex; align-items:center; justify-content:center; font-weight:800; color:#fff; font-size:13px; }
+  .t3 .alarm { background:linear-gradient(160deg,#2e7d32 0%, #14471b 100%); color:#fff; }
+  .t3 .alarm .big { font-size:64px; font-weight:900; text-align:center; letter-spacing:-2px; }
+  .t3 .alarm .title { font-size:21px; font-weight:800; text-align:center; }
+  .t3 .alarm .btn.white { background:#fff; color:#14471b; }
+  .t3 .alarm .btn.outline { background:rgba(255,255,255,.14); border:1.5px solid rgba(255,255,255,.55); color:#fff; }
+
+  .spacer { flex:1; }
+</style>
+</head>
+<body>
+  <h1>🎨 ANGi — Choix de maquettes</h1>
+  <div class="sub">3 directions graphiques · les 4 écrans principaux de l'app (Accueil, Alarme, Contacts, Réglages) · choisissez celle que vous préférez</div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="show(1)">1 · Sport Night (sombre)</div>
+    <div class="tab" onclick="show(2)">2 · Clair Minimal (lumineux)</div>
+    <div class="tab" onclick="show(3)">3 · Vélo Nature (vert)</div>
+  </div>
+
+  <!-- ============ THEME 1 ============ -->
+  <section class="theme show" id="theme1">
+    <div class="theme-title">1 · « Sport Night » — sombre & énergique</div>
+    <div class="theme-desc">Fond anthracite, accents rouge ANGi avec dégradés et lueurs, cartes sombres arrondies, gros titres. Ambiance application sport haut de gamme (type Strava sombre). Idéal vélo/course, fatigue oculaire réduite de nuit.</div>
+    <div class="grid">
+      <div class="phone t1"><div class="notch"></div><div class="screen">
+        <div class="screen-inner">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div class="brand">ANG<span>i</span></div>
+            <div class="pill ok"><span class="dot"></span>Connecté</div>
+          </div>
+          <div class="card" style="padding:6px 6px 10px">
+            <div class="map">
+              <div class="road" style="left:0;top:52%;width:100%;height:8px"></div>
+              <div class="road" style="left:24%;top:0;width:8px;height:100%"></div>
+              <div class="road" style="left:62%;top:30%;width:6px;height:70%"></div>
+              <div class="road" style="left:10%;top:70%;width:55%;height:6px"></div>
+              <div class="pin"></div>
+              <div class="loc">49.87218, 2.28816 ±5 m</div>
+            </div>
+          </div>
+          <div class="meta" style="text-align:center">Batterie capteur : 100 % · FW 2.10</div>
+          <div class="card">
+            <div style="font-size:10.5px;color:#8b94a5">DERNIÈRE ALERTE</div>
+            <div style="font-size:11.5px;color:#5ee79a;font-weight:600">Aucune alerte envoyée</div>
+          </div>
+          <button class="btn primary">Démarrer la surveillance</button>
+          <button class="btn ghost">Appairer un capteur</button>
+          <button class="btn ghost">Contacts d'urgence</button>
+          <button class="btn ghost">Envoyer ma position</button>
+          <button class="btn ghost">Réglages</button>
+          <div class="spacer"></div>
+          <div style="display:flex;gap:6px;justify-content:center">
+            <div style="width:6px;height:6px;border-radius:50%;background:#3a4454"></div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#3a4454"></div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#3a4454"></div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#3a4454"></div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#3a4454"></div>
+          </div>
+        </div>
+      </div></div>
+
+      <div class="phone t1"><div class="notch"></div><div class="screen alarm"><div class="screen-inner" style="align-items:center;justify-content:center;gap:14px">
+        <div style="font-size:12px;letter-spacing:2px;font-weight:700;opacity:.85">MODE TEST</div>
+        <div class="title">Tenez, ça va ?</div>
+        <div class="big">15</div>
+        <div style="font-size:12px;opacity:.85;text-align:center">SMS envoyé automatiquement aux contacts<br>à la fin du compte à rebours</div>
+        <button class="btn white" style="width:100%">Je vais bien</button>
+        <button class="btn outline" style="width:100%">Envoyer maintenant</button>
+        <div class="spacer"></div>
+      </div></div></div>
+
+      <div class="phone t1"><div class="notch"></div><div class="screen"><div class="screen-inner">
+        <div class="brand" style="font-size:20px">Contacts <span>d'urgence</span></div>
+        <div class="contact">
+          <div class="avatar">J</div>
+          <div><div style="font-weight:700;font-size:13.5px">Josselin</div><div style="font-size:11px;color:#8b94a5">+33 6 26 91 92 43</div></div>
+        </div>
+        <div class="contact" style="opacity:.5">
+          <div class="avatar" style="background:#3a4454">+</div>
+          <div style="font-size:13px;color:#8b94a5">Ajouter un contact</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn primary">Ajouter un contact</button>
+      </div></div></div>
+
+      <div class="phone t1"><div class="notch"></div><div class="screen"><div class="screen-inner">
+        <div class="brand" style="font-size:20px">Ré<span>glages</span></div>
+        <div class="card">
+          <div class="row"><span style="font-size:13px;font-weight:600">Surveillance continue</span><span class="sw"></span></div>
+          <div class="row"><span style="font-size:13px;font-weight:600">Alerte si vélo sans capteur</span><span class="sw"></span></div>
+          <div class="row"><span style="font-size:13px;font-weight:600">Activer les logs</span><span class="sw"></span></div>
+          <div class="row"><span style="font-size:13px;font-weight:600">Compte à rebours</span><span style="font-size:13px;font-weight:800;color:#ED1C24">15 s</span></div>
+        </div>
+        <button class="btn ghost">Vérifier les mises à jour</button>
+        <button class="btn ghost">Tester l'alarme (aucun SMS)</button>
+        <div class="spacer"></div>
+        <div class="meta" style="text-align:center">Journal : Téléchargements/ANGi_debug.log.txt<br>Version 2.22</div>
+      </div></div></div>
+    </div>
+  </section>
+
+  <!-- ============ THEME 2 ============ -->
+  <section class="theme" id="theme2">
+    <div class="theme-title">2 · « Clair Minimal » — lumineux & épuré</div>
+    <div class="theme-desc">Fond blanc cassé, cartes blanches avec ombres douces, grands arrondis, accent rouge vif + vert de statut. Ambiance Google Material moderne, lisibilité maximale (idéal en plein soleil).</div>
+    <div class="grid">
+      <div class="phone t2"><div class="notch"></div><div class="screen"><div class="screen-inner">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="brand">ANG<span>i</span></div>
+          <div class="pill ok"><span class="dot"></span>Connecté</div>
+        </div>
+        <div class="card" style="padding:6px 6px 10px">
+          <div class="map">
+            <div class="road" style="left:0;top:52%;width:100%;height:9px"></div>
+            <div class="road" style="left:24%;top:0;width:9px;height:100%"></div>
+            <div class="road" style="left:62%;top:30%;width:7px;height:70%"></div>
+            <div class="road" style="left:10%;top:70%;width:55%;height:7px"></div>
+            <div class="pin"></div>
+            <div class="loc">49.87218, 2.28816 ±5 m</div>
+          </div>
+        </div>
+        <div class="meta" style="text-align:center">Batterie capteur : 100 % · FW 2.10</div>
+        <div class="card">
+          <div style="font-size:10.5px;color:#7a8290">DERNIÈRE ALERTE</div>
+          <div style="font-size:11.5px;color:#1b5e20;font-weight:600">Aucune alerte envoyée</div>
+        </div>
+        <button class="btn primary">Démarrer la surveillance</button>
+        <button class="btn ghost">Appairer un capteur</button>
+        <button class="btn ghost">Contacts d'urgence</button>
+        <button class="btn ghost">Envoyer ma position</button>
+        <button class="btn ghost">Réglages</button>
+        <div class="spacer"></div>
+      </div></div></div>
+
+      <div class="phone t2"><div class="notch"></div><div class="screen alarm"><div class="screen-inner" style="align-items:center;justify-content:center;gap:14px">
+        <div style="font-size:12px;letter-spacing:2px;font-weight:700;opacity:.85">MODE TEST</div>
+        <div class="title">Tenez, ça va ?</div>
+        <div class="big">15</div>
+        <div style="font-size:12px;opacity:.9;text-align:center">SMS envoyé automatiquement aux contacts<br>à la fin du compte à rebours</div>
+        <button class="btn white" style="width:100%">Je vais bien</button>
+        <button class="btn outline" style="width:100%">Envoyer maintenant</button>
+        <div class="spacer"></div>
+      </div></div></div>
+
+      <div class="phone t2"><div class="notch"></div><div class="screen"><div class="screen-inner">
+        <div class="brand" style="font-size:20px">Contacts <span>d'urgence</span></div>
+        <div class="contact">
+          <div class="avatar">J</div>
+          <div><div style="font-weight:700;font-size:13.5px">Josselin</div><div style="font-size:11px;color:#7a8290">+33 6 26 91 92 43</div></div>
+        </div>
+        <div class="contact" style="opacity:.55">
+          <div class="avatar" style="background:#d4d8de;color:#7a8290">+</div>
+          <div style="font-size:13px;color:#7a8290">Ajouter un contact</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn primary">Ajouter un contact</button>
+      </div></div></div>
+
+      <div class="phone t2"><div class="notch"></div><div class="screen"><div class="screen-inner">
+        <div class="brand" style="font-size:20px">Ré<span>glages</span></div>
+        <div class="card">
+          <div class="row"><span style="font-size:13px;font-weight:600">Surveillance continue</span><span class="sw"></span></div>
+          <div class="row"><span style="font-size:13px;font-weight:600">Alerte si vélo sans capteur</span><span class="sw"></span></div>
+          <div class="row"><span style="font-size:13px;font-weight:600">Activer les logs</span><span class="sw"></span></div>
+          <div class="row"><span style="font-size:13px;font-weight:600">Compte à rebours</span><span style="font-size:13px;font-weight:800;color:#ED1C24">15 s</span></div>
+        </div>
+        <button class="btn ghost">Vérifier les mises à jour</button>
+        <button class="btn ghost">Tester l'alarme (aucun SMS)</button>
+        <div class="spacer"></div>
+        <div class="meta" style="text-align:center">Journal : Téléchargements/ANGi_debug.log.txt<br>Version 2.22</div>
+      </div></div></div>
+    </div>
+  </section>
+
+  <!-- ============ THEME 3 ============ -->
+  <section class="theme" id="theme3">
+    <div class="theme-title">3 · « Vélo Nature » — vert & chaleureux</div>
+    <div class="theme-desc">Tons verts (couleur casque ANGi), fond crème teinté, cartes blanches arrondies, statuts verts. Ambiance vélo/outdoor apaisante, cohérente avec la marque ANGi.</div>
+    <div class="grid">
+      <div class="phone t3"><div class="notch"></div><div class="screen"><div class="screen-inner">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="brand">ANG<span>i</span></div>
+          <div class="pill ok"><span class="dot"></span>Connecté</div>
+        </div>
+        <div class="card" style="padding:6px 6px 10px">
+          <div class="map">
+            <div class="road" style="left:0;top:52%;width:100%;height:9px"></div>
+            <div class="road" style="left:24%;top:0;width:9px;height:100%"></div>
+            <div class="road" style="left:62%;top:30%;width:7px;height:70%"></div>
+            <div class="road" style="left:10%;top:70%;width:55%;height:7px"></div>
+            <div class="pin"></div>
+            <div class="loc">49.87218, 2.28816 ±5 m</div>
+          </div>
+        </div>
+        <div class="meta" style="text-align:center">Batterie capteur : 100 % · FW 2.10</div>
+        <div class="card">
+          <div style="font-size:10.5px;color:#6b8271">DERNIÈRE ALERTE</div>
+          <div style="font-size:11.5px;color:#145a30;font-weight:600">Aucune alerte envoyée</div>
+        </div>
+        <button class="btn primary">Démarrer la surveillance</button>
+        <button class="btn ghost">Appairer un capteur</button>
+        <button class="btn ghost">Contacts d'urgence</button>
+        <button class="btn ghost">Envoyer ma position</button>
+        <button class="btn ghost">Réglages</button>
+        <div class="spacer"></div>
+      </div></div></div>
+
+      <div class="phone t3"><div class="notch"></div><div class="screen alarm"><div class="screen-inner" style="align-items:center;justify-content:center;gap:14px">
+        <div style="font-size:12px;letter-spacing:2px;font-weight:700;opacity:.85">MODE TEST</div>
+        <div class="title">Tenez, ça va ?</div>
+        <div class="big">15</div>
+        <div style="font-size:12px;opacity:.9;text-align:center">SMS envoyé automatiquement aux contacts<br>à la fin du compte à rebours</div>
+        <button class="btn white" style="width:100%">Je vais bien</button>
+        <button class="btn outline" style="width:100%">Envoyer maintenant</button>
+        <div class="spacer"></div>
+      </div></div></div>
+
+      <div class="phone t3"><div class="notch"></div><div class="screen"><div class="screen-inner">
+        <div class="brand" style="font-size:20px">Contacts <span>d'urgence</span></div>
+        <div class="contact">
+          <div class="avatar">J</div>
+          <div><div style="font-weight:700;font-size:13.5px">Josselin</div><div style="font-size:11px;color:#6b8271">+33 6 26 91 92 43</div></div>
+        </div>
+        <div class="contact" style="opacity:.55">
+          <div class="avatar" style="background:#c9d6c2;color:#33563b">+</div>
+          <div style="font-size:13px;color:#6b8271">Ajouter un contact</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn primary">Ajouter un contact</button>
+      </div></div></div>
+
+      <div class="phone t3"><div class="notch"></div><div class="screen"><div class="screen-inner">
+        <div class="brand" style="font-size:20px">Ré<span>glages</span></div>
+        <div class="card">
+          <div class="row"><span style="font-size:13px;font-weight:600">Surveillance continue</span><span class="sw"></span></div>
+          <div class="row"><span style="font-size:13px;font-weight:600">Alerte si vélo sans capteur</span><span class="sw"></span></div>
+          <div class="row"><span style="font-size:13px;font-weight:600">Activer les logs</span><span class="sw"></span></div>
+          <div class="row"><span style="font-size:13px;font-weight:600">Compte à rebours</span><span style="font-size:13px;font-weight:800;color:#1B7A43">15 s</span></div>
+        </div>
+        <button class="btn ghost">Vérifier les mises à jour</button>
+        <button class="btn ghost">Tester l'alarme (aucun SMS)</button>
+        <div class="spacer"></div>
+        <div class="meta" style="text-align:center">Journal : Téléchargements/ANGi_debug.log.txt<br>Version 2.22</div>
+      </div></div></div>
+    </div>
+  </section>
+
+<script>
+  function show(n) {
+    document.querySelectorAll('.theme').forEach(t => t.classList.remove('show'));
+    document.getElementById('theme' + n).classList.add('show');
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === n - 1));
+  }
+</script>
+</body>
+</html>
