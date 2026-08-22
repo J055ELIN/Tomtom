@@ -33,7 +33,8 @@ attendre_motif () {  # attendre_motif <motif grep> <étiquette>
     sleep 2
   done
   capturer "echec-$(echo "$etiquette" | tr ' ' '_')"
-  echo "  ✗ introuvable : $etiquette (motif « $motif ») — capture $SORTIE"
+  cp /tmp/ui.xml "$SORTIE/ui-$(echo "$etiquette" | tr ' ' '_').xml" 2>/dev/null || true
+  echo "  ✗ introuvable : $etiquette (motif « $motif ») — capture + XML dans $SORTIE"
   exit 1
 }
 
@@ -133,6 +134,15 @@ tap "Réglages"
 attendre_motif "Journaliser l'activité" "boîte de réglages affichée"
 tap "champ_pseudo"
 adb shell input text "270144314"
+sleep 1
+dump
+if ! grep -q 'text="270144314"' /tmp/ui.xml; then
+  echo "  ✗ le champ pseudo ne contient pas « 270144314 » (frappe non reçue ?)"
+  capturer "echec-frappe"; cp /tmp/ui.xml "$SORTIE/ui-frappe.xml"
+  grep -o 'champ_pseudo[^>]*' /tmp/ui.xml | head -2
+  exit 1
+fi
+echo "  ✓ « 270144314 » saisi dans le champ"
 # pas de touche Échap : elle fermerait la boîte Réglages ; on ne ferme le
 # clavier par RETOUR que s'il est réellement ouvert (fermer_clavier)
 fermer_clavier
