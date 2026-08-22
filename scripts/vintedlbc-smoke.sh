@@ -9,7 +9,7 @@
 # ============================================================================
 set -euo pipefail
 
-APK="vintedlbc/VintedLbc-v1.2.apk"
+APK="vintedlbc/VintedLbc-v1.3.apk"
 PKG="com.j055elin.vintedlbc"
 SORTIE="/tmp/smoke"
 mkdir -p "$SORTIE"
