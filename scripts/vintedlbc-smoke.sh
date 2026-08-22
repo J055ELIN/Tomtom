@@ -78,6 +78,18 @@ tap () {
   sleep 1.5
 }
 
+# ferme le clavier virtuel SANS fermer la boîte de dialogue : la touche RETOUR
+# n'est envoyée que si le clavier est réellement ouvert (vérifié via dumpsys)
+fermer_clavier () {
+  for _ in 1 2 3; do
+    local ouvert
+    ouvert=$(adb shell dumpsys input_method 2>/dev/null | grep -c "mInputShown=true" || true)
+    if [ "${ouvert:-0}" = "0" ]; then return 0; fi
+    adb shell input keyevent 4   # RETOUR : clavier ouvert → ferme le clavier
+    sleep 1
+  done
+}
+
 # --- 1. installation -------------------------------------------------------
 
 echo "== 1. Installation de l'APK =="
@@ -121,14 +133,20 @@ tap "Réglages"
 attendre_motif "Journaliser l'activité" "boîte de réglages affichée"
 tap "champ_pseudo"
 adb shell input text "270144314"
-# pas de touche Échap : elle fermerait la boîte de dialogue (le clavier n'est
-# de toute façon pas ouvert avec « input text »)
-sleep 1
+# pas de touche Échap : elle fermerait la boîte Réglages ; on ne ferme le
+# clavier par RETOUR que s'il est réellement ouvert (fermer_clavier)
+fermer_clavier
 tap "Enregistrer"
+fermer_clavier
+dump
+if grep -q "Journaliser l'activité" /tmp/ui.xml; then
+  echo "  ✗ la boîte Réglages est restée ouverte après « Enregistrer »"; capturer "echec-reglages-sync"; exit 1
+fi
 adb logcat -c
 tap "Synchroniser"
 echo "  … synchronisation en cours (résolution du numéro + scan Vinted public + photos)"
-attendre_logcat "SYNC: ok" "synchronisation terminée" 60
+attendre_logcat "SYNC: démarrage demandé" "bouton Synchroniser a bien déclenché la synchro" 15
+attendre_logcat "SYNC: ok" "synchronisation terminée" 100
 NB=$(adb logcat -d 2>/dev/null | grep -oE "SYNC: ok — [0-9]+ nouvelles" | head -1 | grep -oE "[0-9]+" | head -1)
 if [ -z "$NB" ] || [ "$NB" -lt 1 ]; then
   echo "  ✗ aucune annonce importée (NB=« $NB »)"; capturer "echec-sync"; exit 1
