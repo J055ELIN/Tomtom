@@ -121,7 +121,8 @@ tap "Réglages"
 attendre_motif "Journaliser l'activité" "boîte de réglages affichée"
 tap "champ_pseudo"
 adb shell input text "270144314"
-adb shell input keyevent 111   # fermer le clavier
+# pas de touche Échap : elle fermerait la boîte de dialogue (le clavier n'est
+# de toute façon pas ouvert avec « input text »)
 sleep 1
 tap "Enregistrer"
 adb logcat -c
