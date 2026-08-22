@@ -155,7 +155,7 @@ fi
 adb logcat -c
 tap "Synchroniser"
 echo "  … synchronisation en cours (résolution du numéro + scan Vinted public + photos)"
-attendre_logcat "SYNC: démarrage demandé" "bouton Synchroniser a bien déclenché la synchro" 15
+attendre_logcat "SYNC: demandé" "bouton Synchroniser a bien déclenché la synchro" 15
 attendre_logcat "SYNC: ok" "synchronisation terminée" 100
 NB=$(adb logcat -d 2>/dev/null | grep -oE "SYNC: ok — [0-9]+ nouvelles" | head -1 | grep -oE "[0-9]+" | head -1)
 if [ -z "$NB" ] || [ "$NB" -lt 1 ]; then
