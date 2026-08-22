@@ -3,6 +3,7 @@
 # Test fumée « Vinted → LBC » sur émulateur (cf SOP §9.4)
 # Vérifie : installation, lancement, écran d'accueil, lecture du manifeste
 # public (mise à jour), réglages + journal, export vers Téléchargements.
+# Assertions UI via uiautomator + assertions logcat via Log.i("VintedLbc").
 # ============================================================================
 set -euo pipefail
 
@@ -34,6 +35,20 @@ attendre_motif () {  # attendre_motif <motif grep> <étiquette>
   exit 1
 }
 
+attendre_logcat () {  # attendre_logcat <motif> <étiquette>
+  local motif="$1" etiquette="$2"
+  for _ in $(seq 1 20); do
+    if adb logcat -d 2>/dev/null | grep -q "$motif"; then
+      echo "  ✓ $etiquette"; return 0
+    fi
+    sleep 2
+  done
+  capturer "echec-logcat-$(echo "$etiquette" | tr ' ' '_')"
+  echo "  ✗ logcat sans « $motif » ($etiquette). Derniers messages :"
+  adb logcat -d -s VintedLbc:I 2>/dev/null | tail -5 | sed 's/^/     /'
+  exit 1
+}
+
 # assistant de tap : trouve text= ou content-desc= contenant le motif, tape au centre
 cat > /tmp/tap.py << 'PYEOF'
 import re, subprocess, sys
@@ -51,7 +66,7 @@ for m in re.finditer(r'<node[^>]*>', x):
 sys.exit(1)
 PYEOF
 
-tap () {  # tap <motif> ; puis petite attente d'affichage
+tap () {
   local motif="$1"
   dump
   if ! python3 /tmp/tap.py "$motif"; then
@@ -75,10 +90,14 @@ attendre_motif "annonces suivies" "bandeau résumé affiché"
 capturer "01-accueil"
 
 echo "== 4. Menu → « Vérifier les mises à jour » (réseau + manifeste + versionCode) =="
+adb logcat -c
 tap "More options"
 attendre_motif "Vérifier les mises à jour" "menu ouvert"
 tap "Vérifier les mises à jour"
-attendre_motif "Application à jour" "manifeste public lu, version identique (Snackbar)"
+attendre_logcat "application à jour" "manifeste public lu, versionCode identique"
+if adb logcat -d 2>/dev/null | grep -q "manifeste injoignable"; then
+  echo "  ✗ le manifeste est injoignable depuis l'émulateur"; exit 1
+fi
 capturer "02-maj-a-jour"
 
 echo "== 5. Réglages : activation du journal =="
@@ -93,16 +112,21 @@ grep -q "Journaliser" /tmp/ui.xml && { echo "  ✗ la boîte est restée ouverte
 echo "  ✓ journal activé + réglages enregistrés"
 capturer "03-apres-reglages"
 
-echo "== 6. Une action journalisée (vérification mise à jour) =="
+echo "== 6. Une action journalisée (2e vérification mise à jour) =="
+adb logcat -c
 tap "More options"
 tap "Vérifier les mises à jour"
-attendre_motif "Application à jour" "action journalisée (2e vérification)"
+attendre_logcat "application à jour" "action rejouée et journalisée"
 
 echo "== 7. Export du journal vers Téléchargements =="
+adb logcat -c
 tap "More options"
 attendre_motif "Exporter le journal" "menu ouvert"
 tap "Exporter le journal"
-attendre_motif "sauvegardé" "Snackbar de confirmation d'export"
+attendre_logcat "JOURNAL:" "export exécuté"
+if adb logcat -d 2>/dev/null | grep -q "Journal vide"; then
+  echo "  ✗ journal vide à l'export"; exit 1
+fi
 capturer "04-export-journal"
 sleep 1
 FICHIER=$(adb shell ls -t /sdcard/Download/ 2>/dev/null | grep "journal-vintedlbc" | head -1 | tr -d '\r')
