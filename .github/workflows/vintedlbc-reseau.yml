@@ -1,0 +1,31 @@
+name: VintedLbc Reseau
+
+# Diagnostic : que renvoie Vinted aux adresses IP des runners GitHub ?
+# Complète le smoke : si Vinted bloque les IP datacenter, la synchro réelle
+# ne peut pas rapporter d'annonces depuis la CI (l'app, elle, fonctionne).
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/vintedlbc-reseau.yml'
+      - 'scripts/vintedlbc-smoke.sh'
+      - 'vintedlbc/**'
+  workflow_dispatch:
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Interroger Vinted comme l'application le fait
+        run: |
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+          for URL in \
+            "https://www.vinted.fr/member/270144314" \
+            "https://www.vinted.fr/catalog?search_text=j055el1n" ; do
+            CODE=$(curl -sL -o /tmp/reponse.html -w "%{http_code}" --max-time 30 \
+                   -H "User-Agent: $UA" -H "Accept: text/html" "$URL")
+            TAILLE=$(stat -c%s /tmp/reponse.html 2>/dev/null || echo 0)
+            NB=$(grep -cE 'href="/items/[0-9]{7,}' /tmp/reponse.html 2>/dev/null || echo 0)
+            echo "$URL → HTTP $CODE, $TAILLE octets, $NB liens d'annonces"
+          done
