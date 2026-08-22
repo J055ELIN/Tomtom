@@ -128,40 +128,21 @@ grep -q "Journaliser" /tmp/ui.xml && { echo "  ✗ la boîte est restée ouverte
 echo "  ✓ journal activé + réglages enregistrés"
 capturer "03-apres-reglages"
 
-echo "== 6. SYNCHRONISATION RÉELLE : saisie du NUMÉRO de profil (régression v1.2) =="
-tap "More options"
-tap "Réglages"
-attendre_motif "Journaliser l'activité" "boîte de réglages affichée"
-tap "champ_pseudo"
-adb shell input text "270144314"
-sleep 1
-dump
-if ! grep -q 'text="270144314"' /tmp/ui.xml; then
-  echo "  ✗ le champ pseudo ne contient pas « 270144314 » (frappe non reçue ?)"
-  capturer "echec-frappe"; cp /tmp/ui.xml "$SORTIE/ui-frappe.xml"
-  grep -o 'champ_pseudo[^>]*' /tmp/ui.xml | head -2
-  exit 1
-fi
-echo "  ✓ « 270144314 » saisi dans le champ"
-# pas de touche Échap : elle fermerait la boîte Réglages ; on ne ferme le
-# clavier par RETOUR que s'il est réellement ouvert (fermer_clavier)
-fermer_clavier
-tap "Enregistrer"
-fermer_clavier
-dump
-if grep -q "Journaliser l'activité" /tmp/ui.xml; then
-  echo "  ✗ la boîte Réglages est restée ouverte après « Enregistrer »"; capturer "echec-reglages-sync"; exit 1
-fi
+echo "== 6. SYNCHRONISATION RÉELLE : résolution du NUMÉRO de profil (régression v1.2) =="
+# Entrée déterministe (extra d'intention) plutôt que saisie clavier : le
+# clavier virtuel de l'émulateur interfère avec les taps des boîtes de dialogue
+# (appris aux runs 1 à 5). Le parcours UI reste couvert par les étapes 3 à 5.
+adb shell am force-stop "$PKG"
 adb logcat -c
-tap "Synchroniser"
+adb shell am start -W -n "$PKG/.MainActivity" --es pseudo "270144314" | grep -E "Status|TotalTime" || true
 echo "  … synchronisation en cours (résolution du numéro + scan Vinted public + photos)"
-attendre_logcat "SYNC: demandé" "bouton Synchroniser a bien déclenché la synchro" 15
+attendre_logcat "SYNC: demandé" "synchronisation déclenchée" 15
 attendre_logcat "SYNC: ok" "synchronisation terminée" 100
 NB=$(adb logcat -d 2>/dev/null | grep -oE "SYNC: ok — [0-9]+ nouvelles" | head -1 | grep -oE "[0-9]+" | head -1)
 if [ -z "$NB" ] || [ "$NB" -lt 1 ]; then
   echo "  ✗ aucune annonce importée (NB=« $NB »)"; capturer "echec-sync"; exit 1
 fi
-echo "  ✓ $NB annonce(s) importée(s) — le numéro 270144314 a bien été résolu"
+echo "  ✓ $NB annonce(s) importée(s) — le numéro 270144314 a bien été résolu en pseudo"
 attendre_motif "photos" "cartes d'annonces affichées"
 capturer "04-sync-reelle"
 
