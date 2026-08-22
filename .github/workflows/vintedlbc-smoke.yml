@@ -1,0 +1,42 @@
+name: VintedLbc Smoke
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'vintedlbc/**'
+      - 'scripts/vintedlbc-smoke.sh'
+      - '.github/workflows/vintedlbc-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [30, 33]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Activer KVM (accélération émulateur)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test Vinted → LBC sur émulateur (API ${{ matrix.api-level }})
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          profile: pixel_4
+          script: bash scripts/vintedlbc-smoke.sh
+
+      - name: Publier les captures en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: captures-echec-api${{ matrix.api-level }}
+          path: /tmp/smoke/
+          if-no-files-found: ignore
