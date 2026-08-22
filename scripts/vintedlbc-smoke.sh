@@ -2,12 +2,14 @@
 # ============================================================================
 # Test fumée « Vinted → LBC » sur émulateur (cf SOP §9.4)
 # Vérifie : installation, lancement, écran d'accueil, lecture du manifeste
-# public (mise à jour), réglages + journal, export vers Téléchargements.
+# public (mise à jour), réglages + journal, SYNCHRONISATION RÉELLE avec le
+# numéro de profil 270144314 (régression v1.2 : « moi ça marche pas »),
+# export du journal vers Téléchargements.
 # Assertions UI via uiautomator + assertions logcat via Log.i("VintedLbc").
 # ============================================================================
 set -euo pipefail
 
-APK="vintedlbc/VintedLbc-v1.1.apk"
+APK="vintedlbc/VintedLbc-v1.2.apk"
 PKG="com.j055elin.vintedlbc"
 SORTIE="/tmp/smoke"
 mkdir -p "$SORTIE"
@@ -35,9 +37,9 @@ attendre_motif () {  # attendre_motif <motif grep> <étiquette>
   exit 1
 }
 
-attendre_logcat () {  # attendre_logcat <motif> <étiquette>
-  local motif="$1" etiquette="$2"
-  for _ in $(seq 1 20); do
+attendre_logcat () {  # attendre_logcat <motif> <étiquette> [essais]
+  local motif="$1" etiquette="$2" essais="${3:-20}"
+  for _ in $(seq 1 "$essais"); do
     if adb logcat -d 2>/dev/null | grep -q "$motif"; then
       echo "  ✓ $etiquette"; return 0
     fi
@@ -49,14 +51,15 @@ attendre_logcat () {  # attendre_logcat <motif> <étiquette>
   exit 1
 }
 
-# assistant de tap : trouve text= ou content-desc= contenant le motif, tape au centre
+# assistant de tap : trouve text=, content-desc= ou resource-id= contenant le
+# motif, tape au centre du nœud
 cat > /tmp/tap.py << 'PYEOF'
 import re, subprocess, sys
 motif = sys.argv[1]
 x = open('/tmp/ui.xml', encoding='utf-8', errors='ignore').read()
 for m in re.finditer(r'<node[^>]*>', x):
     tag = m.group(0)
-    if re.search(r'(text|content-desc)="[^"]*' + re.escape(motif) + r'[^"]*"', tag):
+    if re.search(r'(text|content-desc|resource-id)="[^"]*' + re.escape(motif) + r'[^"]*"', tag):
         b = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', tag)
         if b:
             l, t, r, bo = map(int, b.groups())
@@ -112,11 +115,26 @@ grep -q "Journaliser" /tmp/ui.xml && { echo "  ✗ la boîte est restée ouverte
 echo "  ✓ journal activé + réglages enregistrés"
 capturer "03-apres-reglages"
 
-echo "== 6. Une action journalisée (2e vérification mise à jour) =="
-adb logcat -c
+echo "== 6. SYNCHRONISATION RÉELLE : saisie du NUMÉRO de profil (régression v1.2) =="
 tap "More options"
-tap "Vérifier les mises à jour"
-attendre_logcat "application à jour" "action rejouée et journalisée"
+tap "Réglages"
+attendre_motif "Journaliser l'activité" "boîte de réglages affichée"
+tap "champ_pseudo"
+adb shell input text "270144314"
+adb shell input keyevent 111   # fermer le clavier
+sleep 1
+tap "Enregistrer"
+adb logcat -c
+tap "Synchroniser"
+echo "  … synchronisation en cours (résolution du numéro + scan Vinted public + photos)"
+attendre_logcat "SYNC: ok" "synchronisation terminée" 60
+NB=$(adb logcat -d 2>/dev/null | grep -oE "SYNC: ok — [0-9]+ nouvelles" | head -1 | grep -oE "[0-9]+" | head -1)
+if [ -z "$NB" ] || [ "$NB" -lt 1 ]; then
+  echo "  ✗ aucune annonce importée (NB=« $NB »)"; capturer "echec-sync"; exit 1
+fi
+echo "  ✓ $NB annonce(s) importée(s) — le numéro 270144314 a bien été résolu"
+attendre_motif "photos" "cartes d'annonces affichées"
+capturer "04-sync-reelle"
 
 echo "== 7. Export du journal vers Téléchargements =="
 adb logcat -c
@@ -127,7 +145,7 @@ attendre_logcat "JOURNAL:" "export exécuté"
 if adb logcat -d 2>/dev/null | grep -q "Journal vide"; then
   echo "  ✗ journal vide à l'export"; exit 1
 fi
-capturer "04-export-journal"
+capturer "05-export-journal"
 sleep 1
 FICHIER=$(adb shell ls -t /sdcard/Download/ 2>/dev/null | grep "journal-vintedlbc" | head -1 | tr -d '\r')
 if [ -z "$FICHIER" ]; then
@@ -136,7 +154,7 @@ fi
 adb pull "/sdcard/Download/$FICHIER" "$SORTIE/$FICHIER" >/dev/null
 if [ ! -s "$SORTIE/$FICHIER" ]; then echo "  ✗ journal exporté vide"; exit 1; fi
 echo "  ✓ $FICHIER exporté ($(wc -l < "$SORTIE/$FICHIER") lignes) :"
-sed 's/^/     /' "$SORTIE/$FICHIER" | head -8
+sed 's/^/     /' "$SORTIE/$FICHIER" | head -10
 
 echo ""
 echo "SMOKE VINTEDLBC : SUCCÈS ✓"
