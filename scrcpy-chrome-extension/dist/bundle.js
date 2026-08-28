@@ -16829,7 +16829,9 @@
         videoCodecOptions: videoCodec === "tinyh264" ? "profile=1" : void 0,
         audio: false,
         control: true,
-        sendFrameMeta: true
+        sendFrameMeta: true,
+        sendDeviceMeta: false
+        // Prevents device metadata from injecting bytes that confuse the decoder/client
       };
       if (altDeskStr) {
         const parts = altDeskStr.split("/");

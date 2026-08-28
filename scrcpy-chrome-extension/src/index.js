@@ -215,6 +215,7 @@ startBtn.addEventListener("click", async () => {
             audio: false,
             control: true,
             sendFrameMeta: true,
+            sendDeviceMeta: false, // Prevents device metadata from injecting bytes that confuse the decoder/client
         };
         
         if (altDeskStr) {
