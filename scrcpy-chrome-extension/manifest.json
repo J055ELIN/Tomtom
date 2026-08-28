@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Chrome ADB Scrcpy",
+  "version": "1.8",
+  "description": "Mirror Android devices using WebADB and Scrcpy",
+  "action": {
+    "default_title": "Open Scrcpy",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  }
+}
