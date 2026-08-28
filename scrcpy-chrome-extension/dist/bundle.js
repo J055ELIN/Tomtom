@@ -16703,7 +16703,8 @@
     }
     try {
       appendLog("--- FETCHING LOGCAT ---");
-      const process = await globalAdb.subprocess.spawn(["logcat", "-d", "-t", "1000", "scrcpy:V", "AndroidRuntime:E", "InputDispatcher:V", "*:S"]);
+      const shell = globalAdb.subprocess.shellProtocol || globalAdb.subprocess.noneProtocol;
+      const process = await shell.spawn(["logcat", "-d", "-t", "1000", "scrcpy:V", "AndroidRuntime:E", "InputDispatcher:V", "*:S"]);
       let output = "";
       const reader = process.stdout.pipeThrough(new TextDecoderStream()).getReader();
       while (true) {
