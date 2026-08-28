@@ -125,8 +125,7 @@ startBtn.addEventListener("click", async () => {
         const videoEnabled = document.getElementById("optVideoEnabled").value === "true";
         const optionsInit = {
             logLevel: "verbose",
-            video: videoEnabled,
-            sendDeviceMeta: false, // Prevent device name from breaking the control stream parser in Control-Only mode
+            video: true, // MUST be true for Scrcpy 4.1 to correctly align Video/Control sockets! We drop frames locally.
             videoBitRate: bitRate,
             maxSize: maxSize,
             maxFps: maxFps,
@@ -185,7 +184,10 @@ startBtn.addEventListener("click", async () => {
         
         const videoStream = await globalClient.videoStream;
         if (!videoEnabled) {
-            // No video stream, just set fake dimensions based on selected Alt Desk
+            // Must consume video stream to prevent socket blocking
+            videoStream.stream.pipeTo(new WritableStream({ write(chunk) {} })).catch(() => {});
+            
+            // Set fake dimensions based on selected Alt Desk
             if (altDeskStr) {
                 const parts = altDeskStr.split("/");
                 const dims = parts[0].split("x");
