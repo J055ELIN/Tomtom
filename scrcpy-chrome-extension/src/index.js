@@ -4,8 +4,33 @@ import { AdbScrcpyClient, AdbScrcpyOptions4_1 } from "@yume-chan/adb-scrcpy";
 import { ScrcpyNewDisplay } from "@yume-chan/scrcpy";
 import { WebCodecsVideoDecoder, WebGLVideoFrameRenderer } from "@yume-chan/scrcpy-decoder-webcodecs";
 import { TinyH264Decoder } from "@yume-chan/scrcpy-decoder-tinyh264";
-import { WritableStream } from "@yume-chan/stream-extra";
+import { WritableStream, TransformStream } from "@yume-chan/stream-extra";
 import AdbWebCredentialStore from "@yume-chan/adb-credential-web";
+
+// Debug Hooking
+const debugLog = document.getElementById("debugLog");
+const streamEvents = [];
+function appendLog(msg) {
+    if(debugLog) {
+        debugLog.value += msg + "\n";
+        debugLog.scrollTop = debugLog.scrollHeight;
+    }
+}
+const oldLog = console.log;
+console.log = function(...args) {
+    oldLog(...args);
+    appendLog(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(" "));
+};
+const oldWarn = console.warn;
+console.warn = function(...args) {
+    oldWarn(...args);
+    appendLog("WARN: " + args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(" "));
+};
+const oldError = console.error;
+console.error = function(...args) {
+    oldError(...args);
+    appendLog("ERROR: " + args.map(a => (a && a.stack) ? a.stack : (typeof a === 'object' ? JSON.stringify(a) : a)).join(" "));
+};
 
 const connectBtn = document.getElementById("connectBtn");
 const startBtn = document.getElementById("startBtn");
@@ -13,6 +38,57 @@ const stopBtn = document.getElementById("stopBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const statusText = document.getElementById("status");
 let canvas = document.getElementById("videoCanvas");
+
+// Tab and debug UI
+document.getElementById("tabMainBtn").addEventListener("click", () => {
+    document.getElementById("tabMainBtn").classList.add("active");
+    document.getElementById("tabDebugBtn").classList.remove("active");
+    document.getElementById("panel-main").style.display = "flex";
+    document.getElementById("panel-debug").style.display = "none";
+});
+document.getElementById("tabDebugBtn").addEventListener("click", () => {
+    document.getElementById("tabDebugBtn").classList.add("active");
+    document.getElementById("tabMainBtn").classList.remove("active");
+    document.getElementById("panel-main").style.display = "none";
+    document.getElementById("panel-debug").style.display = "flex";
+});
+document.getElementById("btnClearLog").addEventListener("click", () => {
+    debugLog.value = "";
+    streamEvents.length = 0;
+});
+document.getElementById("btnCopyLog").addEventListener("click", () => {
+    navigator.clipboard.writeText(debugLog.value).catch(() => {});
+});
+document.getElementById("btnExportJson").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(streamEvents, null, 2)], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "scrcpy-stream-events.json";
+    a.click();
+});
+document.getElementById("btnLogcat").addEventListener("click", async () => {
+    if (!globalAdb) {
+        appendLog("ADB not connected, cannot fetch logcat.");
+        return;
+    }
+    try {
+        appendLog("--- FETCHING LOGCAT ---");
+        const process = await globalAdb.subprocess.spawn(["logcat", "-d", "-t", "1000", "scrcpy:V", "AndroidRuntime:E", "InputDispatcher:V", "*:S"]);
+        
+        let output = "";
+        const reader = process.stdout.pipeThrough(new TextDecoderStream()).getReader();
+        while(true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            output += value;
+        }
+        appendLog(output);
+        appendLog("--- END LOGCAT ---");
+    } catch(e) {
+        appendLog("Logcat failed: " + e);
+    }
+});
 
 // Globals to manage connections
 let globalDevice = null;
@@ -161,6 +237,16 @@ startBtn.addEventListener("click", async () => {
             options
         );
         updateUI();
+        
+        // Hook the control stream to record JSON events
+        if (globalClient.controller) {
+            const originalWrite = globalClient.controller.write.bind(globalClient.controller);
+            globalClient.controller.write = async (msg) => {
+                const hex = Array.from(msg).map(b => b.toString(16).padStart(2, '0')).join('');
+                streamEvents.push({ time: Date.now(), direction: "out", length: msg.byteLength, hex: hex });
+                return originalWrite(msg);
+            };
+        }
         
         // Consume clipboard to prevent control socket from blocking
         if (options.clipboard) {

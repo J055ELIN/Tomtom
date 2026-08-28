@@ -1578,7 +1578,7 @@
     }
     return ReadableStream5;
   })();
-  var { WritableStream, TransformStream: TransformStream2 } = globalThis;
+  var { WritableStream, TransformStream } = globalThis;
 
   // node_modules/@yume-chan/stream-extra/esm/task-queue.js
   var TaskQueue = class {
@@ -2440,7 +2440,7 @@
       return output;
     }
   };
-  var DistributionStream = class extends TransformStream2 {
+  var DistributionStream = class extends TransformStream {
     constructor(size, combine = false) {
       const combiner = combine ? new BufferCombiner(size) : void 0;
       super({
@@ -2593,7 +2593,7 @@
 
   // node_modules/@yume-chan/stream-extra/esm/encoding.js
   var Global = globalThis;
-  var TextDecoderStream = Global.TextDecoderStream;
+  var TextDecoderStream2 = Global.TextDecoderStream;
   var TextEncoderStream = Global.TextEncoderStream;
 
   // node_modules/@yume-chan/stream-extra/esm/pipe-from.js
@@ -3302,7 +3302,7 @@
     }
     async spawnWaitText(command) {
       const process = await this.spawn(command);
-      return await process.output.pipeThrough(new TextDecoderStream()).pipeThrough(new ConcatStringStream());
+      return await process.output.pipeThrough(new TextDecoderStream2()).pipeThrough(new ConcatStringStream());
     }
   };
 
@@ -3541,8 +3541,8 @@
     async spawnWaitText(command) {
       const process = await this.spawn(command);
       const [stdout, stderr, exitCode] = await Promise.all([
-        process.stdout.pipeThrough(new TextDecoderStream()).pipeThrough(new ConcatStringStream()),
-        process.stderr.pipeThrough(new TextDecoderStream()).pipeThrough(new ConcatStringStream()),
+        process.stdout.pipeThrough(new TextDecoderStream2()).pipeThrough(new ConcatStringStream()),
+        process.stderr.pipeThrough(new TextDecoderStream2()).pipeThrough(new ConcatStringStream()),
         process.exited
       ]);
       return { stdout, stderr, exitCode };
@@ -4249,7 +4249,7 @@
     }
     async createSocketAndWait(service) {
       const socket = await this.createSocket(service);
-      return await socket.readable.pipeThrough(new TextDecoderStream()).pipeThrough(new ConcatStringStream());
+      return await socket.readable.pipeThrough(new TextDecoderStream2()).pipeThrough(new ConcatStringStream());
     }
     getProp(key) {
       return this.subprocess.noneProtocol.spawnWaitText(["getprop", key]).then((output) => output.trim());
@@ -4549,7 +4549,7 @@
   function calculateChecksum(payload) {
     return payload.reduce((result, item) => result + item, 0);
   }
-  var AdbPacketSerializeStream = class extends TransformStream2 {
+  var AdbPacketSerializeStream = class extends TransformStream {
     constructor() {
       const headerBuffer = new Uint8Array(AdbPacketHeader.size);
       super({
@@ -6609,7 +6609,7 @@
   })();
   var ReadableStreamBYOBReader = getGlobalValue("ReadableStreamBYOBReader");
   var ReadableStreamDefaultReader = getGlobalValue("ReadableStreamDefaultReader");
-  var TransformStream3 = getGlobalValue("TransformStream");
+  var TransformStream2 = getGlobalValue("TransformStream");
   var WritableStream2 = getGlobalValue("WritableStream");
   var WritableStreamDefaultWriter = getGlobalValue("WritableStreamDefaultWriter");
 
@@ -7729,7 +7729,7 @@
   var PtsConfig = 1n << 63n;
   function createMediaStreamTransformer(options) {
     if (!options.sendFrameMeta) {
-      return new TransformStream3({
+      return new TransformStream2({
         transform(chunk, controller) {
           controller.enqueue({
             type: "data",
@@ -7741,7 +7741,7 @@
     const deserializeStream = new StructDeserializeStream2(MediaStreamRawPacket);
     return {
       writable: deserializeStream.writable,
-      readable: deserializeStream.readable.pipeThrough(new TransformStream3({
+      readable: deserializeStream.readable.pipeThrough(new TransformStream2({
         transform(packet, controller) {
           if (packet.pts === PtsConfig) {
             controller.enqueue({
@@ -8455,7 +8455,7 @@
   var PtsKeyframe = 1n << 62n;
   function createMediaStreamTransformer2(options) {
     if (!options.sendFrameMeta) {
-      return new TransformStream3({
+      return new TransformStream2({
         transform(chunk, controller) {
           controller.enqueue({
             type: "data",
@@ -8467,7 +8467,7 @@
     const deserializeStream = new StructDeserializeStream2(impl_exports5.MediaStreamRawPacket);
     return {
       writable: deserializeStream.writable,
-      readable: deserializeStream.readable.pipeThrough(new TransformStream3({
+      readable: deserializeStream.readable.pipeThrough(new TransformStream2({
         transform(packet, controller) {
           if (packet.pts === impl_exports5.PtsConfig) {
             controller.enqueue({
@@ -9698,7 +9698,7 @@
   // node_modules/@yume-chan/scrcpy/esm/4_0/impl/media-stream-transformer.js
   function createMediaStreamTransformer3(options) {
     if (!options.sendFrameMeta) {
-      return new TransformStream3({
+      return new TransformStream2({
         transform(chunk, controller) {
           controller.enqueue({
             type: "data",
@@ -9953,7 +9953,7 @@
   var AbortController3 = getGlobalValue2("AbortController");
 
   // node_modules/@yume-chan/adb-scrcpy/node_modules/@yume-chan/stream-extra/esm/global/encoding.js
-  var TextDecoderStream2 = getGlobalValue2("TextDecoderStream");
+  var TextDecoderStream3 = getGlobalValue2("TextDecoderStream");
   var TextEncoderStream2 = getGlobalValue2("TextEncoderStream");
 
   // node_modules/@yume-chan/adb-scrcpy/node_modules/@yume-chan/stream-extra/esm/try-close.js
@@ -10014,7 +10014,7 @@
   })();
   var ReadableStreamBYOBReader2 = getGlobalValue2("ReadableStreamBYOBReader");
   var ReadableStreamDefaultReader2 = getGlobalValue2("ReadableStreamDefaultReader");
-  var TransformStream4 = getGlobalValue2("TransformStream");
+  var TransformStream3 = getGlobalValue2("TransformStream");
   var WritableStream3 = getGlobalValue2("WritableStream");
   var WritableStreamDefaultWriter2 = getGlobalValue2("WritableStreamDefaultWriter");
 
@@ -10394,7 +10394,7 @@
   };
 
   // node_modules/@yume-chan/adb-scrcpy/node_modules/@yume-chan/stream-extra/esm/inspect.js
-  var InspectStream = class extends TransformStream4 {
+  var InspectStream = class extends TransformStream3 {
     constructor(write, extras) {
       super({
         async transform(chunk, controller) {
@@ -10412,7 +10412,7 @@
   };
 
   // node_modules/@yume-chan/adb-scrcpy/node_modules/@yume-chan/stream-extra/esm/split-string.js
-  var SplitStringStream = class extends TransformStream4 {
+  var SplitStringStream = class extends TransformStream3 {
     constructor(separator, options) {
       let remaining = void 0;
       const separatorLength = separator.length;
@@ -13101,7 +13101,7 @@
         } else {
           process = await adb.subprocess.noneProtocol.spawn(args);
         }
-        const output = process.output.pipeThrough(new TextDecoderStream2()).pipeThrough(new SplitStringStream("\n", { trimEnd: true }));
+        const output = process.output.pipeThrough(new TextDecoderStream3()).pipeThrough(new SplitStringStream("\n", { trimEnd: true }));
         const lines = [];
         const abortController = new AbortController3();
         const pipe = output.pipeTo(new WritableStream3({
@@ -16639,12 +16639,84 @@
   };
 
   // src/index.js
+  var debugLog = document.getElementById("debugLog");
+  var streamEvents = [];
+  function appendLog(msg) {
+    if (debugLog) {
+      debugLog.value += msg + "\n";
+      debugLog.scrollTop = debugLog.scrollHeight;
+    }
+  }
+  var oldLog = console.log;
+  console.log = function(...args) {
+    oldLog(...args);
+    appendLog(args.map((a) => typeof a === "object" ? JSON.stringify(a) : a).join(" "));
+  };
+  var oldWarn = console.warn;
+  console.warn = function(...args) {
+    oldWarn(...args);
+    appendLog("WARN: " + args.map((a) => typeof a === "object" ? JSON.stringify(a) : a).join(" "));
+  };
+  var oldError = console.error;
+  console.error = function(...args) {
+    oldError(...args);
+    appendLog("ERROR: " + args.map((a) => a && a.stack ? a.stack : typeof a === "object" ? JSON.stringify(a) : a).join(" "));
+  };
   var connectBtn = document.getElementById("connectBtn");
   var startBtn = document.getElementById("startBtn");
   var stopBtn = document.getElementById("stopBtn");
   var disconnectBtn = document.getElementById("disconnectBtn");
   var statusText = document.getElementById("status");
   var canvas = document.getElementById("videoCanvas");
+  document.getElementById("tabMainBtn").addEventListener("click", () => {
+    document.getElementById("tabMainBtn").classList.add("active");
+    document.getElementById("tabDebugBtn").classList.remove("active");
+    document.getElementById("panel-main").style.display = "flex";
+    document.getElementById("panel-debug").style.display = "none";
+  });
+  document.getElementById("tabDebugBtn").addEventListener("click", () => {
+    document.getElementById("tabDebugBtn").classList.add("active");
+    document.getElementById("tabMainBtn").classList.remove("active");
+    document.getElementById("panel-main").style.display = "none";
+    document.getElementById("panel-debug").style.display = "flex";
+  });
+  document.getElementById("btnClearLog").addEventListener("click", () => {
+    debugLog.value = "";
+    streamEvents.length = 0;
+  });
+  document.getElementById("btnCopyLog").addEventListener("click", () => {
+    navigator.clipboard.writeText(debugLog.value).catch(() => {
+    });
+  });
+  document.getElementById("btnExportJson").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(streamEvents, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "scrcpy-stream-events.json";
+    a.click();
+  });
+  document.getElementById("btnLogcat").addEventListener("click", async () => {
+    if (!globalAdb) {
+      appendLog("ADB not connected, cannot fetch logcat.");
+      return;
+    }
+    try {
+      appendLog("--- FETCHING LOGCAT ---");
+      const process = await globalAdb.subprocess.spawn(["logcat", "-d", "-t", "1000", "scrcpy:V", "AndroidRuntime:E", "InputDispatcher:V", "*:S"]);
+      let output = "";
+      const reader = process.stdout.pipeThrough(new TextDecoderStream()).getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        output += value;
+      }
+      appendLog(output);
+      appendLog("--- END LOGCAT ---");
+    } catch (e) {
+      appendLog("Logcat failed: " + e);
+    }
+  });
   var globalDevice = null;
   var globalAdb = null;
   var globalClient = null;
@@ -16776,6 +16848,14 @@
         options
       );
       updateUI();
+      if (globalClient.controller) {
+        const originalWrite = globalClient.controller.write.bind(globalClient.controller);
+        globalClient.controller.write = async (msg) => {
+          const hex = Array.from(msg).map((b) => b.toString(16).padStart(2, "0")).join("");
+          streamEvents.push({ time: Date.now(), direction: "out", length: msg.byteLength, hex });
+          return originalWrite(msg);
+        };
+      }
       if (options.clipboard) {
         options.clipboard.pipeTo(new WritableStream({
           write(msg) {
