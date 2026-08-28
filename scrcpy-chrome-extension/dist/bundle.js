@@ -16743,6 +16743,8 @@
       const optionsInit = {
         logLevel: "verbose",
         video: videoEnabled,
+        sendDeviceMeta: false,
+        // Prevent device name from breaking the control stream parser in Control-Only mode
         videoBitRate: bitRate,
         maxSize,
         maxFps,
@@ -16856,6 +16858,7 @@
     if (globalClient) {
       try {
         await globalClient.close();
+        await new Promise((resolve) => setTimeout(resolve, 500));
       } catch (e) {
         console.error("Error stopping scrcpy client:", e);
       }
@@ -16869,6 +16872,10 @@
       }
       globalDecoder = null;
     }
+    const newCanvas = canvas.cloneNode();
+    canvas.parentNode.replaceChild(newCanvas, canvas);
+    canvas = newCanvas;
+    bindCanvasEvents(canvas);
     const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
     if (gl) {
       gl.clearColor(0, 0, 0, 1);
@@ -16947,11 +16954,11 @@
       canvas._lastY = coords.y;
     }
     const actionButton = 0;
-    const buttons = action === 1 ? 0 : 1;
+    const buttons = 0;
     globalClient.controller.injectTouch({
       action,
-      pointerId: 1n,
-      // Generic finger 1
+      pointerId: BigInt.asUintN(64, -4n),
+      // Scrcpy PointerId.VirtualFinger
       pointerX: Math.round(sendX),
       pointerY: Math.round(sendY),
       videoWidth: globalSession.width,
@@ -16961,19 +16968,22 @@
       buttons
     }).catch((err) => console.warn("Failed to inject touch", err));
   }
-  canvas.addEventListener("mousedown", handleMouseEvent);
-  canvas.addEventListener("mouseup", handleMouseEvent);
-  canvas.addEventListener("mousemove", handleMouseEvent);
-  canvas.addEventListener("mouseleave", handleMouseEvent);
-  canvas.addEventListener("contextmenu", (e) => {
-    e.preventDefault();
-    if (globalClient?.controller) {
-      globalClient.controller.backOrScreenOn(0).catch(() => {
-      });
-      setTimeout(() => globalClient.controller.backOrScreenOn(1).catch(() => {
-      }), 50);
-    }
-  });
+  function bindCanvasEvents(targetCanvas) {
+    targetCanvas.addEventListener("mousedown", handleMouseEvent);
+    targetCanvas.addEventListener("mouseup", handleMouseEvent);
+    targetCanvas.addEventListener("mousemove", handleMouseEvent);
+    targetCanvas.addEventListener("mouseleave", handleMouseEvent);
+    targetCanvas.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (globalClient?.controller) {
+        globalClient.controller.backOrScreenOn(0).catch(() => {
+        });
+        setTimeout(() => globalClient.controller.backOrScreenOn(1).catch(() => {
+        }), 50);
+      }
+    });
+  }
+  bindCanvasEvents(canvas);
   var KEYCODE_MAP = {
     "Backspace": 67,
     "Enter": 66,
