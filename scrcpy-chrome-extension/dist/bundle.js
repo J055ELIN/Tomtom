@@ -16955,19 +16955,18 @@
       canvas._lastX = coords.x;
       canvas._lastY = coords.y;
     }
-    const actionButton = 0;
-    const buttons = 0;
+    const isDownOrMove = action === 0 || action === 2;
     globalClient.controller.injectTouch({
       action,
-      pointerId: BigInt.asUintN(64, -4n),
-      // Scrcpy PointerId.VirtualFinger
+      pointerId: BigInt.asUintN(64, -1n),
+      // Scrcpy PointerId.Mouse
       pointerX: Math.round(sendX),
       pointerY: Math.round(sendY),
       videoWidth: globalSession.width,
       videoHeight: globalSession.height,
-      pressure: action === 1 ? 0 : 1,
-      actionButton,
-      buttons
+      pressure: isDownOrMove ? 1 : 0,
+      actionButton: isDownOrMove ? 1 : 0,
+      buttons: isDownOrMove ? 1 : 0
     }).catch((err) => console.warn("Failed to inject touch", err));
   }
   function bindCanvasEvents(targetCanvas) {
@@ -16997,7 +16996,70 @@
     "ArrowRight": 22,
     "Home": 3,
     // Home button
-    "Tab": 61
+    "Tab": 61,
+    "Space": 62,
+    "a": 29,
+    "A": 29,
+    "b": 30,
+    "B": 30,
+    "c": 31,
+    "C": 31,
+    "d": 32,
+    "D": 32,
+    "e": 33,
+    "E": 33,
+    "f": 34,
+    "F": 34,
+    "g": 35,
+    "G": 35,
+    "h": 36,
+    "H": 36,
+    "i": 37,
+    "I": 37,
+    "j": 38,
+    "J": 38,
+    "k": 39,
+    "K": 39,
+    "l": 40,
+    "L": 40,
+    "m": 41,
+    "M": 41,
+    "n": 42,
+    "N": 42,
+    "o": 43,
+    "O": 43,
+    "p": 44,
+    "P": 44,
+    "q": 45,
+    "Q": 45,
+    "r": 46,
+    "R": 46,
+    "s": 47,
+    "S": 47,
+    "t": 48,
+    "T": 48,
+    "u": 49,
+    "U": 49,
+    "v": 50,
+    "V": 50,
+    "w": 51,
+    "W": 51,
+    "x": 52,
+    "X": 52,
+    "y": 53,
+    "Y": 53,
+    "z": 54,
+    "Z": 54,
+    "0": 7,
+    "1": 8,
+    "2": 9,
+    "3": 10,
+    "4": 11,
+    "5": 12,
+    "6": 13,
+    "7": 14,
+    "8": 15,
+    "9": 16
   };
   function handleKeyEvent(e) {
     if (!globalClient || !globalClient.controller) return;
