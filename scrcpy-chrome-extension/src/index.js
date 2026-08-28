@@ -214,8 +214,9 @@ startBtn.addEventListener("click", async () => {
             videoCodecOptions: videoCodec === "tinyh264" ? "profile=1" : undefined,
             audio: false,
             control: true,
-            sendFrameMeta: true,
+            sendFrameMeta: false, // Prevents media stream transformer errors
             sendDeviceMeta: false, // Prevents device metadata from injecting bytes that confuse the decoder/client
+            sendStreamMeta: false, // Fix "ExactReadable ended" by avoiding 4-byte stream meta reading
         };
         
         if (altDeskStr) {
