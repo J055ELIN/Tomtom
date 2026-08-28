@@ -208,7 +208,8 @@ startBtn.addEventListener("click", async () => {
             turnScreenOff: turnScreenOff,
             stayAwake: stayAwake,
             clipboardAutosync: false, // Prevents ID 80 crash
-            videoCodec: videoCodec === "tinyh264" ? "h264" : videoCodec,
+            videoCodec: (videoCodec === "tinyh264" || videoCodec === "h264-sw") ? "h264" : videoCodec,
+            videoEncoder: videoCodec === "h264-sw" ? "c2.android.avc.encoder" : undefined,
             videoCodecOptions: videoCodec === "tinyh264" ? "profile=1" : undefined,
             audio: false,
             control: true,
@@ -306,6 +307,7 @@ startBtn.addEventListener("click", async () => {
             globalDecoder = new WebCodecsVideoDecoder({
                 codec: metadata.codec,
                 renderer: new WebGLVideoFrameRenderer(canvas),
+                hardwareAcceleration: "prefer-hardware",
             });
         }
         
@@ -316,6 +318,7 @@ startBtn.addEventListener("click", async () => {
                     globalSession = chunk;
                     return;
                 }
+                console.log("Video chunk:", chunk.type, chunk.keyframe, "length:", chunk.data ? chunk.data.byteLength : 0);
                 controller.enqueue(chunk);
             }
         })).pipeTo(globalDecoder.writable).catch(e => {
