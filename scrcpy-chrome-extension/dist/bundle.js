@@ -5723,12 +5723,12 @@
     }
     close() {
       for (const parser of this.#parsers) {
-        parser.close();
+        if (parser && parser.close) parser.close();
       }
     }
     error(e) {
       for (const parser of this.#parsers) {
-        parser.error(e);
+        if (parser && parser.error) parser.error(e);
       }
     }
   };
