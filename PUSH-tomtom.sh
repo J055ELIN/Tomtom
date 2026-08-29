@@ -5,21 +5,64 @@
 #   ./PUSH-tomtom.sh --dry-run     affiche les commandes, ne fait rien (testable hors connexion)
 #   GH_TOKEN=… ./PUSH-tomtom.sh   pousse + declenche  (token requis : Contents write + Actions write)
 #   ./PUSH-tomtom.sh --watch       suit l'avancee SANS token (les runs d'un depot public sont lisibles)
+#   ./PUSH-tomtom.sh --ref=master  construit la 4.x au lieu de la 3.7.1 par defaut
+#
+# Le defaut de --ref est lu dans .github/workflows/$WF (pas copie ici) : les deux ne peuvent
+# donc pas diverger.  Si la ref n'existe pas, le clone echoue ; si l'arbre du core ne correspond
+# a aucun des deux patchs, l'etape "correction appliquee" du workflow sort en erreur au lieu de
+# publier un APK non corrige.
 #
 # Le token : cree un PAT fine-grained limite AU DEPOT Tomtom, droits "Contents: Read and
 # write" + "Actions: Read and write", expiration 1 jour.  Ne reutilise pas le token de la
 # SOP (il est d'ailleurs mort : 401 sur /user) et ne le colle dans aucun document partage.
 set -uo pipefail
 
+# JAMAIS d'invite interactive : sans GH_TOKEN le push doit echouer tout de suite plutot que
+# de rester bloque sur "Username for 'https://github.com':" (mesure : sans cette ligne, le
+# script partait dans 'git push' et se pendait 300 s).
+export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true SSH_ASKPASS=/bin/true
+
 REPO="${REPO:-J055ELIN/Tomtom}"
 BRANCH="${BRANCH:-vlc-sftp-build}"
 WF="${WF:-vlc-android-sftp.yml}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ABI="${ABI:-arm64}"; REF="${VLC_ANDROID_REF:-master}"; PROBE="${PROBE_SERVER:-}"
+WF_FILE="$HERE/.github/workflows/$WF"
+ABI="${ABI:-arm64}"; PROBE="${PROBE_SERVER:-}"
+
+# La version de vlc-android a construire n'est PAS dupliquee ici : on lit le defaut reel du
+# workflow, pour que le dispatch et le YAML ne puissent pas diverger (sinon on croirait lancer
+# une 3.7.1 et on lancerait en fait autre chose).  Overrides : VLC_ANDROID_REF=... ou --ref=...
+workflow_default() {
+    [ -f "$WF_FILE" ] || return 1
+    local v
+    v=$(awk '/vlc_android_ref/{f=1;next} f&&/default:/{gsub(/[ "'"'"']/,"",$2); print $2; exit}' "$WF_FILE")
+    [ -n "$v" ] || return 1
+    printf '%s' "$v"
+}
+REF="${VLC_ANDROID_REF:-$(workflow_default || true)}"
+[ -n "$REF" ] || REF=3.7.1
+# --ref= X ou --ref X, accepte en n'importe quelle position ; le premier argument non option
+# reste le mode (--dry-run / --watch).
+ARGS=(); MODE=""; SKIP=0
+for ((i=1;i<=$#;i++)); do
+    a="${!i}"
+    if [ "$SKIP" = 1 ]; then SKIP=0; continue; fi
+    case "$a" in
+        --ref=*)  REF="${a#--ref=}" ;;
+        --ref)    REF="${@:i+1:1}"; SKIP=1; [ -n "$REF" ] || { echo "--ref attend une valeur (ex. --ref=3.7.1 ou --ref master)" >&2; exit 2; } ;;
+        --dry-run|--watch) [ -z "$MODE" ] && MODE="$a" ;;
+        *) ARGS+=("$a") ;;
+    esac
+done
 
 red() { sed "s/${GH_TOKEN:-__none__}/***REDACTE***/g"; }
 
-if [ "${1:-}" = "--dry-run" ]; then
+if [ "$MODE" = "--help" ] || [ "$MODE" = "-h" ]; then
+    awk 'NR>1 && /^#/{sub(/^# ?/,""); print; next} NR>1{exit}' "$0"
+    exit 0
+fi
+
+if [ "$MODE" = "--dry-run" ]; then
     echo "commands that would run (repo $REPO, branch $BRANCH) :"
     cat <<EOF
   git -C "$HERE" push https://x-access-token:\$GH_TOKEN@github.com/$REPO.git HEAD:$BRANCH
@@ -36,6 +79,7 @@ EOF
     echo "contenu qui sera pousse :"
     ( cd "$HERE" && git ls-files | sed 's/^/  /' )
     echo "commit : $(git -C "$HERE" log --oneline -1)"
+    echo "base vlc-android demandee : $REF   (lu dans le defaut du workflow : $(workflow_default || echo 'indecidable'))"
     exit 0
 fi
 
