@@ -1,0 +1,189 @@
+# Construit un VLC for Android dont le SFTP parle a un serveur Debian 13, a partir
+# du correctif contrib stocke dans vlc-sftp/ de CE depot.  Aucun APK publie ici :
+# ce workflow ne fait que produire un artifact.
+#
+# Pourquoi ca marche ici et pas sur la machine de la SOP : les contribs de VLC
+# demandent un NDK + 8-16 GB de RAM + 25-40 GB de disque ; /toolchain ne contient
+# que jdk17 + android-sdk + gradle-home.  Le runner ubuntu-24.04 a les 3.
+#
+# PIEGE A CONNAITRE : ne jamais ajouter -t (contribs PRECOMPILEES de VideoLAN).
+# get-contrib-sha.sh calcule le SHA des contribs depuis l'historique git : un patch
+# non committe ne le change pas, VideoLAN sert ses .so officiels, le patch n'est
+# jamais compile, et l'APK reste casse en silence.  C'est pour ca que l'etape
+# "Portique" existe : elle rend ce cas rouge au lieu de vert.
+
+name: vlc-android-sftp-debian13
+
+on:
+  workflow_dispatch:
+    inputs:
+      abi:
+        description: "ABI a construire"
+        type: choice
+        default: arm64
+        options: [arm64, arm, x86_64, all]
+      vlc_android_ref:
+        description: "branche/tag de videolan/vlc-android (3.7.x si tu viens de 3.7.0)"
+        type: string
+        default: master
+      release_apk:
+        description: "APK --release (sinon build de dev signe avec la cle de test)"
+        type: boolean
+        default: false
+      probe_server:
+        description: "hote SFTP a auditer avant build (vide = sauter l'audit)"
+        type: string
+        default: ""
+
+env:
+  ANDROID_SDK: ${{ github.workspace }}/android-sdk
+  SDK_BUILD_TOOLS: "35.0.0"
+  SDK_PLATFORM: "android-35"
+  NDK_VERSION: "26.1.12297006"
+
+jobs:
+  audit-serveur:
+    if: ${{ inputs.probe_server != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Algorithms offered by the SSH server (no credentials, no auth attempt)"
+        run: |
+          set -uo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq nmap > /dev/null
+          H="${{ inputs.probe_server }}"
+          echo "  audit de $H (22) - cote serveur uniquement"
+          nmap -Pn -sV --version-light --script ssh2-enum-algos -p22 "$H" 2>/dev/null \
+            | sed -n '/kex_algorithms/,/ssh_host_key/p' | head -40 | sed 's/^/    /'
+          echo
+          echo "  VLC 3.7.0 (libssh2 + backend libgcrypt) ne sait faire que :"
+          echo "    KEX      : diffie-hellman-group14-sha256 / group16-sha512 / group1-sha1"
+          echo "    hostkey  : ssh-rsa (SHA-1), ssh-dss"
+          echo "  => si la liste du serveur ne contient AUCUN de ces KEX, c'est bien le blocage."
+
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 420
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Menage sur le disque (les contribs demandent ~40 Go)"
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/.ghcup || true
+          df -h / | tail -1 | sed 's/^/  espace disponible desormais: /'
+
+      - name: "Dependances (liste verifiee en buildant les contribs en cross)"
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            autoconf automake libtool autopoint gettext pkg-config make cmake ninja-build \
+            gcc g++ patch unzip xz-utils curl git python3 flex bison gperf yasm nasm \
+            ant protobuf-compiler ragel subversion zip libtool-bin >> /dev/null
+          for t in autopoint cmake ninja libtoolize pkg-config; do
+            command -v "$t" >/dev/null || { echo "MANQUANT: $t"; exit 1; }
+          done
+          echo "  outils requis: OK"
+
+      - name: "JDK 17 (VLC exige 17, pas 21)"
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: "Android SDK cmdline-tools + plateforme + build-tools + NDK"
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_SDK/cmdline-tools"
+          curl -fsSL -o /tmp/clt.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q /tmp/clt.zip -d "$ANDROID_SDK/cmdline-tools"
+          mv "$ANDROID_SDK/cmdline-tools/cmdline-tools" "$ANDROID_SDK/cmdline-tools/latest"
+          export PATH="$ANDROID_SDK/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" "platforms;$SDK_PLATFORM" \
+                     "build-tools;$SDK_BUILD_TOOLS" "ndk;$NDK_VERSION" "cmake;3.22.1" > /dev/null
+          echo "ANDROID_NDK=$ANDROID_SDK/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK=$ANDROID_SDK" >> "$GITHUB_ENV"
+          echo "sdk.dir=$ANDROID_SDK" > local.properties
+          ls -d "$ANDROID_SDK/ndk/$NDK_VERSION" >/dev/null && echo "  NDK: installe"
+
+      - name: "Sources vlc-android (+ sous-modules libvlc / vlc)"
+        run: |
+          set -euo pipefail
+          git clone --recursive --depth 1 --branch "${{ inputs.vlc_android_ref }}" \
+            https://code.videolan.org/videolan/vlc-android.git _va
+          echo "VLC_ANDROID=$GITHUB_WORKSPACE/_va" >> "$GITHUB_ENV"
+
+      - name: "Preparation (--init) puis application du correctif"
+        run: |
+          set -euo pipefail
+          cd "$VLC_ANDROID"
+          ./buildsystem/compile.sh --init -a "${{ inputs.abi }}" > "$GITHUB_WORKSPACE/init.log" 2>&1 || true
+          VLC_SRC="$(find . -maxdepth 6 -type d -name contrib -path '*/vlc/*' | head -1 | xargs -r dirname)"
+          [ -n "$VLC_SRC" ] || { echo "AUCUN arbre vlc trouve ; fins de init.log :"; tail -20 "$GITHUB_WORKSPACE/init.log"; exit 1; }
+          echo "vlc source tree: $VLC_SRC ($(git -C "$VLC_SRC" rev-parse --short HEAD))"
+          cd "$VLC_SRC"
+          git apply -v "$GITHUB_WORKSPACE/vlc-sftp/patches/0001-contrib-build-libssh2-against-Mbed-TLS-on-Android.patch" \
+            || patch -p1 --forward < "$GITHUB_WORKSPACE/vlc-sftp/patches/0001-contrib-build-libssh2-against-Mbed-TLS-on-Android.patch"
+          git status --porcelain | sed 's/^/  /'
+          # garde-fou immediat : sans ces 3 fichiers, le build suivant ne corrigerait rien
+          for f in contrib/src/mbedtls/rules.mak contrib/src/mbedtls/SHA512SUMS contrib/src/ssh2/rules.mak; do
+            [ -f "$f" ] || { echo "MANQUANT apres patch: $f"; exit 1; }
+          done
+          grep -q 'CRYPTO_BACKEND:STRING=mbedTLS' contrib/src/ssh2/rules.mak || { echo "le flags mbedTLS n'est pas dans rules.mak"; exit 1; }
+          echo "  correctif en place dans $(git rev-parse --short HEAD)"
+
+      - name: "Build des contribs + LibVLC + app (-b : pas de reset des sources patchees)"
+        run: |
+          set -euo pipefail
+          cd "$VLC_ANDROID"
+          args="-a ${{ inputs.abi }} -b"
+          [ "${{ inputs.release_apk }}" = "true" ] && args="$args --release"
+          ./buildsystem/compile.sh $args > "$GITHUB_WORKSPACE/build.log" 2>&1
+          rc=$?
+          tail -25 "$GITHUB_WORKSPACE/build.log"
+          grep -c 'contrib' "$GITHUB_WORKSPACE/build.log" > /dev/null && echo "  build terminee (code $rc)"
+
+      - name: "Portique : le binaire contient-il les algorithmes de Debian 13"
+        run: |
+          set -uo pipefail
+          A="$(find "$VLC_ANDROID" -path '*contrib*' -name libssh2.a 2>/dev/null | head -1)"
+          [ -n "$A" ] || { echo "libssh2.a introuvable -> contribs probablement PRECOMPILEES (-t) : le patch n'a pas tourne"; exit 1; }
+          bash "$GITHUB_WORKSPACE/vlc-sftp/tools/inspect-apk.sh" --expect=fixed "$A" || {
+            echo "::error::le correctif n'est pas arrive jusqu'au binaire"
+            grep -nE 'PREBUILT|with-prebuilt-contribs|Crypto backend' "$GITHUB_WORKSPACE/build.log" | tail -6
+            exit 1
+          }
+          echo "  => backend Mbed TLS et KEX modernes bien presents"
+
+      - name: "Collecte de l'APK + empreinte"
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          APK="$(find "$VLC_ANDROID" -name '*.apk' | sort | tail -1)"
+          [ -n "$APK" ] || { echo "AUCUN APK ; voir build.log"; tail -40 "$GITHUB_WORKSPACE/build.log"; exit 1; }
+          cp "$APK" out/VLC-android-sftp-arm64.apk
+          ( cd out && sha256sum VLC-android-sftp-arm64.apk > VLC-android-sftp-arm64.apk.sha256 )
+          ls -l out; du -h out/*.apk
+          echo "APK : $(stat -c %s out/VLC-android-sftp-arm64.apk) octets"
+
+      - name: "Controle final sur l'APK complet (et pas seulement la .a)"
+        run: |
+          set -uo pipefail
+          bash "$GITHUB_WORKSPACE/vlc-sftp/tools/inspect-apk.sh" --expect=fixed out/VLC-android-sftp-arm64.apk \
+            || echo "::warning::le portique refuse l'APK complet - ne pas publier avant d'avoir compris"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vlc-android-sftp
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: "Ce qu'il reste a faire (publication a la main, volontairement non automatisee)"
+        run: |
+          echo "  1) telecharger l'artifact, le deposer sur le Filebrowser (vlc-sftp/tools/publier-apk-sop.sh)"
+          echo "  2) NE PAS toucher a latest.json de Tomtom : c'est le canal de mise a jour de tes autres apps"
+          echo "  3) tester sur l'appareil : Parcourir > Nouvelle connexion > SFTP > <hote>.usbx.me:22"
+          echo "  4) installer en conserve : adb install -r VLC-android-sftp-arm64.apk"

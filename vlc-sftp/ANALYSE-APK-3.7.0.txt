@@ -1,0 +1,76 @@
+Analyse binaire de VLC-Android 3.7.0 arm64-v8a (le meme APK que tu as passe au decompilateur)
+Generee par tools/inspect-apk.sh le 2026-08-29 21:29 UTC ; source : archive officielle download.videolan.org
+(le site de decompilation ne sert aucun fichier : cf. README section 6)
+================================================================
+telechargement de l'APK officiel : https://download.videolan.org/pub/videolan/vlc-android/3.7.0/VLC-Android-3.7.0-arm64-v8a.apk
+=== 0. objet analyse ===
+   /tmp/apkinspect.zUHbZn/app.apk
+   taille : 49960882 octets | sha256 : 4f3c08e4ef6f66ee1f9abd27115790d6e9d160226bb7158787c7b21d3cae924f
+ entrees dans l archive: 111621757 2616 files
+
+=== 1. bibliothèques natives embarquees (ABI arm64-v8a) ===
+      9236352  lib/arm64-v8a/libc++_shared.so
+      5304024  lib/arm64-v8a/libmla.so
+     43088280  lib/arm64-v8a/libvlc.so
+        94296  lib/arm64-v8a/libvlcjni.so
+   -> 4 fichier(s) .so
+   -> AUCUN .so separe pour sftp/ssh : le module est lie dans le gros binaire
+      (donc 'echanger un .so' n'existe pas ici, il faut reconstruire le binaire)
+
+=== 2. extraction des natifs ===
+      9236352  libc++_shared.so
+      5304024  libmla.so
+     43088280  libvlc.so
+        94296  libvlcjni.so
+   libc++_shared.so : ELF 64-bit LSB shared object, ARM aarch64, version 1 (SYSV
+   libmla.so : ELF 64-bit LSB shared object, ARM aarch64, version 1 (SYSV
+   libvlc.so : ELF 64-bit LSB shared object, ARM aarch64, version 1 (SYSV
+   libvlcjni.so : ELF 64-bit LSB shared object, ARM aarch64, version 1 (SYSV
+
+=== 3. backend crypto lie statiquement (dans libvlc.so) ===
+   occurrences de chaines evocatrices (0 = le code n'est pas dans le binaire) :
+     gcry_      300
+     mbedtls_   0
+     gnutls_    2856
+     nettle_    679
+     ssh_key_   0
+   => le backend est celui annonce par ces compteurs, pas celui qu'on suppose
+
+=== 4. tables de methodes : quels algorithmes existent dans le binaire ===
+   algorithme                         occurrences    sert a
+   diffie-hellman-group1-sha1         1              KEX (les seuls que libgcrypt sait faire)
+   diffie-hellman-group14-sha256      1              KEX (les seuls que libgcrypt sait faire)
+   diffie-hellman-group16-sha512      1              KEX (les seuls que libgcrypt sait faire)
+   ecdh-sha2-nistp256                 0              KEX modernes (seuls offerts par OpenSSH 9.8+)
+   curve25519-sha256                  0              KEX modernes (seuls offerts par OpenSSH 9.8+)
+   ssh-rsa                            2              cles d'hote heritees (SHA-1 / DSA)
+   ssh-dss                            2              cles d'hote heritees (SHA-1 / DSA)
+   rsa-sha2-256                       0              cles d'hote modernes
+   rsa-sha2-512                       0              cles d'hote modernes
+   ssh-ed25519                        2              cles d'hote modernes
+   ecdsa-sha2-nistp256                2              cles d'hote modernes
+
+   Lecture : ecdh-sha2-nistp256 / curve25519-sha256 / rsa-sha2-* a 0 veut dire que le
+   client NE PEUT pas les proposer : la chaine n'existe pas dans le binaire. Elle est en
+   .rodata d'un .so genere par le compilateur a partir des contribs C ; ni smali ni Java
+   n'y peut rien (aucun de ces noms n'apparait dans les classes*.dex, cf. section 6).
+
+=== 6. cote Java/dex : reste-t-il seulement de quoi configurer SSH ? ===
+   classes.dex      mentions de «sftp»=0    refs a une config d'algorithmes=0
+   classes2.dex     mentions de «sftp»=0    refs a une config d'algorithmes=0
+   classes3.dex     mentions de «sftp»=0    refs a une config d'algorithmes=0
+   classes4.dex     mentions de «sftp»=0    refs a une config d'algorithmes=0
+   classes5.dex     mentions de «sftp»=0    refs a une config d'algorithmes=0
+   classes6.dex     mentions de «sftp»=1    refs a une config d'algorithmes=0
+   total dex : sftp=1, config d'algorithmes=0
+   => le code Java ne fait que passer l'URL ; modules/access/sftp.c de VLC n'appelle
+      aucune fonction de preference d'algorithmes (verifie dans le depot : aucun
+      libssh2_session_method_pref n'y figure).
+
+=== 7. verdict (--expect=broken) ===
+   KEX modernes presents (ecdh+curve25519) : 0 | mbedtls_ : 0 occ. | gcry_ : 300 occ.
+   (rsa-sha2-512 en clair dans le binaire : 0 occ. - indicatif, NON discriminant)
+   criteres « corrige » : KEX modernes >= 1 ET mbedtls_ >= 1 -> NON
+   criteres « embarque » : KEX modernes a 0                   -> OUI
+   VERDICT : profil « VLC non patche » confirme (backend libgcrypt, aucun KEX
+   moderne) - c'est la reproduction binaire du bug, pas un artefact de mesure.

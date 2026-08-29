@@ -1,0 +1,133 @@
+From a60c128c13070597c8a9f97eadf46f726d5377dd Mon Sep 17 00:00:00 2001
+From: VLC SFTP Debian-13 fix <patch@local>
+Date: Sat, 29 Aug 2026 19:49:33 +0000
+Subject: [PATCH] contrib: build libssh2 against Mbed TLS on Android
+
+The Android (and every non-Windows) contrib build compiles libssh2 with the
+Libgcrypt crypto backend.  That backend only implements:
+
+  * DH-group key exchanges (curve25519 is gated on LIBSSH2_ED25519,
+    ecdh-sha2-nistp* on LIBSSH2_ECDSA, both 0 in src/libgcrypt.h)
+  * "ssh-rsa" (SHA-1) and "ssh-dss" host keys (LIBSSH2_RSA_SHA2 is 0)
+
+OpenSSH >= 9.8 - i.e. Debian 13 "trixie", which Ultra.cc and other seedbox
+providers migrated to in August 2026 - removed DSA support entirely and no
+longer lists ssh-rsa or any DH-group algorithm in its defaults.  The SSH
+handshake therefore fails before authentication, which shows up as sftp://
+bookmarks in VLC for Android no longer connecting to servers that worked fine
+before the distribution upgrade.
+
+Use the Mbed TLS backend on Android instead: it provides ecdh-sha2-nistp*,
+ECDSA host keys and rsa-sha2-256/512 signatures, all of which modern sshd
+still accepts.  Mbed TLS is dual licensed Apache-2.0 / GPL-2.0-or-later, so
+unlike OpenSSL it is compatible with the LGPLv2.1 libVLC and the GPLv2 app.
+
+Verified against OpenSSH 10.0p1 (Debian 13 packaging, no compatibility knobs):
+libssh2 1.11.1 + Libgcrypt fails with LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE,
+while the same version + Mbed TLS completes the handshake, authenticates and
+lists a directory over SFTP.
+
+The package checksum file contrib/src/mbedtls/SHA512SUMS is required by the
+generic ".sum-%" rule (contrib/src/main.mak): without it the contrib build
+stops before configuring mbed TLS.
+---
+ contrib/src/mbedtls/SHA512SUMS |  1 +
+ contrib/src/mbedtls/rules.mak  | 33 +++++++++++++++++++++++++++++++++
+ contrib/src/ssh2/rules.mak     | 19 +++++++++++++++++++
+ 3 files changed, 53 insertions(+)
+ create mode 100644 contrib/src/mbedtls/SHA512SUMS
+ create mode 100644 contrib/src/mbedtls/rules.mak
+
+diff --git a/contrib/src/mbedtls/SHA512SUMS b/contrib/src/mbedtls/SHA512SUMS
+new file mode 100644
+index 0000000..a5b5d1b
+--- /dev/null
++++ b/contrib/src/mbedtls/SHA512SUMS
+@@ -0,0 +1 @@
++acc6d49cba57379f27185d6a381073132f3013c91bb21d14f57ca4f9f4b75cd27df6bf0bb598ffa347ebeb34d9d3a444ef230592813c5611c918f7714ed4a8df  mbedtls-3.6.5.tar.bz2
+diff --git a/contrib/src/mbedtls/rules.mak b/contrib/src/mbedtls/rules.mak
+new file mode 100644
+index 0000000..3cc5465
+--- /dev/null
++++ b/contrib/src/mbedtls/rules.mak
+@@ -0,0 +1,33 @@
++# Mbed TLS
++
++MBEDTLS_VERSION := 3.6.5
++MBEDTLS_URL := $(GITHUB)/Mbed-TLS/mbedtls/releases/download/mbedtls-$(MBEDTLS_VERSION)/mbedtls-$(MBEDTLS_VERSION).tar.bz2
++
++PKGS += mbedtls
++ifeq ($(call need_pkg,"mbedcrypto"),)
++PKGS_FOUND += mbedtls
++endif
++
++$(TARBALLS)/mbedtls-$(MBEDTLS_VERSION).tar.bz2:
++	$(call download_pkg,$(MBEDTLS_URL),mbedtls)
++
++.sum-mbedtls: mbedtls-$(MBEDTLS_VERSION).tar.bz2
++
++mbedtls: mbedtls-$(MBEDTLS_VERSION).tar.bz2 .sum-mbedtls
++	$(UNPACK)
++	$(MOVE)
++
++# Static only: libssh2 is itself built as a static library in the contribs,
++# and the resulting plugins must not carry an extra runtime dependency.
++MBEDTLS_CONF := -DUSE_STATIC_MBEDTLS_LIBRARY=ON \
++	-DUSE_SHARED_MBEDTLS_LIBRARY=OFF \
++	-DENABLE_TESTING=OFF \
++	-DENABLE_PROGRAMS=OFF \
++	-DGEN_FILES=OFF
++
++.mbedtls: mbedtls toolchain.cmake
++	$(CMAKECLEAN)
++	$(HOSTVARS_CMAKE) $(CMAKE) $(MBEDTLS_CONF)
++	+$(CMAKEBUILD)
++	$(CMAKEINSTALL)
++	touch $@
+diff --git a/contrib/src/ssh2/rules.mak b/contrib/src/ssh2/rules.mak
+index 17f754e..5ca7484 100644
+--- a/contrib/src/ssh2/rules.mak
++++ b/contrib/src/ssh2/rules.mak
+@@ -20,6 +20,17 @@ ssh2: libssh2-$(LIBSSH2_VERSION).tar.xz .sum-ssh2
+ 	$(MOVE)
+ 
+ DEPS_ssh2 =
++ifdef HAVE_ANDROID
++# With the Libgcrypt backend, libssh2 only implements the DH-group key
++# exchanges and the "ssh-rsa"/"ssh-dss" host keys: LIBSSH2_ECDSA,
++# LIBSSH2_ED25519 and LIBSSH2_RSA_SHA2 are all 0 in src/libgcrypt.h.
++# OpenSSH 9.8+ (Debian 13 "trixie" and later) dropped DSA entirely, removed
++# ssh-rsa (SHA-1) from the default HostKeyAlgorithms and no longer offers any
++# DH-group KEX, so sftp:// dies during the handshake with
++# "no matching host key type found" / LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE.
++# Mbed TLS provides ECDH key exchange, ECDSA host keys and rsa-sha2-256/512.
++DEPS_ssh2 += mbedtls $(DEPS_mbedtls)
++else
+ ifndef HAVE_WIN32
+ DEPS_ssh2 += gcrypt $(DEPS_gcrypt)
+ else
+@@ -28,13 +39,21 @@ ifdef HAVE_WINSTORE
+ DEPS_ssh2 += alloweduwp $(DEPS_alloweduwp)
+ endif
+ endif
++endif
+ 
+ SSH2_CONF := -DBUILD_EXAMPLES=OFF -DLIBSSH2_BUILD_DOCS=OFF
++ifdef HAVE_ANDROID
++# Point cmake/FindMbedTLS.cmake at the contribs, not at the host system.
++SSH2_CONF += -DCRYPTO_BACKEND:STRING=mbedTLS \
++	-DMBEDTLS_INCLUDE_DIR:PATH=$(PREFIX)/include \
++	-DMBEDCRYPTO_LIBRARY:FILEPATH=$(PREFIX)/lib/libmbedcrypto.a
++else
+ ifndef HAVE_WIN32
+ SSH2_CONF += -DCRYPTO_BACKEND:STRING=Libgcrypt
+ else
+ SSH2_CONF += -DCRYPTO_BACKEND:STRING=WinCNG
+ endif
++endif
+ 
+ .ssh2: ssh2 toolchain.cmake
+ 	$(CMAKECLEAN)
+-- 
+2.47.3
+
