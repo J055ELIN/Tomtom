@@ -128,19 +128,28 @@ jobs:
           # (c'est la branche que libvlcjni-3.x va chercher pour un APK 3.7.x). Les deux
           # ne s'appliquent pas au meme endroit : 'DEPS_ssh2 = gcrypt' en 3.0.x contre
           # 'ifndef HAVE_WIN32 / DEPS_ssh2 += gcrypt' en master. On choisit a l'essai.
-          APPLIED=""
+          FITS=""
           for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[12]-*.patch; do
-            if git apply --check "$p" 2>/dev/null; then
-              git apply "$p"; APPLIED="$(basename "$p")"; break
-            fi
+            git apply --check "$p" 2>/dev/null && FITS="$FITS $p"
           done
+          case "$(echo $FITS | wc -w)" in
+            1) APPLIED="${FITS## }"; git apply "$APPLIED" ;;
+            0) APPLIED="" ;;
+            *) echo "AMBIGUITE: les deux patchs s'appliquent sur cet arbre ($(git rev-parse --short HEAD)) :"; echo "$FITS" | tr ' ' '\n' | sed '/^$/d;s/^/     /'; exit 1 ;;
+          esac
           if [ -z "$APPLIED" ]; then
+            FITS=""
             for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[12]-*.patch; do
-              patch -p1 --forward --dry-run < "$p" > /tmp/p.log 2>&1 && { patch -p1 --forward < "$p"; APPLIED="$(basename "$p")"; break; }
+              patch -p1 --forward --dry-run < "$p" > /tmp/p.log 2>&1 && FITS="$FITS $p"
             done
+            case "$(echo $FITS | wc -w)" in
+              1) APPLIED="${FITS## }"; patch -p1 --forward < "$APPLIED" ;;
+              0) ;;
+              *) echo "AMBIGUITE: les deux patchs s'appliquent via 'patch' aussi"; exit 1 ;;
+            esac
           fi
           [ -n "$APPLIED" ] || { echo "AUCUN patch ne s'applique sur cet arbre vlc ($(git rev-parse --short HEAD))"; exit 1; }
-          echo "  patch retenu : $APPLIED"
+          echo "  patch retenu : $(basename "$APPLIED")  (exactement une des deux candidates s'applique ; les cas '0' et '2' sortent en erreur)"
           git status --porcelain | sed 's/^/  /'
           # garde-fou immediat : sans ces 3 fichiers, le build suivant ne corrigerait rien
           for f in contrib/src/mbedtls/rules.mak contrib/src/mbedtls/SHA512SUMS contrib/src/ssh2/rules.mak; do
