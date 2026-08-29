@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PUSH-tomtom.sh - Pousser la branche de ce repertoire sur ton depot, lancer le
-# workflow, puis suivre le build.  Trois modes :
+# workflow, puis suivre le build.  Modes :
 #
 #   ./PUSH-tomtom.sh --dry-run     affiche les commandes, ne fait rien (testable hors connexion)
 #   GH_TOKEN=… ./PUSH-tomtom.sh   pousse + declenche  (token requis : Contents write + Actions write)
