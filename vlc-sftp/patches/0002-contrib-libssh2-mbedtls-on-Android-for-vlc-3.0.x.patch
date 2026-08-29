@@ -1,0 +1,120 @@
+From 8d38910767c2f5ad28000149b3df1ea9b695cfce Mon Sep 17 00:00:00 2001
+From: vlc-sftp <patch@local>
+Date: Sat, 29 Aug 2026 21:40:06 +0000
+Subject: [PATCH] contrib: build libssh2 against Mbed TLS on Android (vlc
+ 3.0.x)
+
+Same change as the master branch patch, adapted to the 3.0.x layout of
+contrib/src/ssh2/rules.mak (which sets DEPS_ssh2 = gcrypt unconditionally and
+assigns SSH2_CONF with ":=" on a single line).  Needed because VLC for Android
+3.7.x builds LibVLC from libvlcjni-3.x, i.e. vlc 3.0.x, not from master: the
+master patch does not apply there ("git apply --check" exits 1).
+
+Verified: libssh2 1.11.1 (same version on both branches) with the Libgcrypt
+backend fails against a default Debian 13 sshd with
+LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE, while the same version against Mbed TLS
+completes the handshake, authenticates and lists a directory over SFTP.
+
+contrib/src/mbedtls/SHA512SUMS is required by the generic ".sum-%" rule of
+contrib/src/main.mak; without it the contrib build stops early.
+---
+ contrib/src/mbedtls/SHA512SUMS |  1 +
+ contrib/src/mbedtls/rules.mak  | 34 ++++++++++++++++++++++++++++++++++
+ contrib/src/ssh2/rules.mak     | 26 +++++++++++++++++++++++++-
+ 3 files changed, 60 insertions(+), 1 deletion(-)
+ create mode 100644 contrib/src/mbedtls/SHA512SUMS
+ create mode 100644 contrib/src/mbedtls/rules.mak
+
+diff --git a/contrib/src/mbedtls/SHA512SUMS b/contrib/src/mbedtls/SHA512SUMS
+new file mode 100644
+index 0000000..a5b5d1b
+--- /dev/null
++++ b/contrib/src/mbedtls/SHA512SUMS
+@@ -0,0 +1 @@
++acc6d49cba57379f27185d6a381073132f3013c91bb21d14f57ca4f9f4b75cd27df6bf0bb598ffa347ebeb34d9d3a444ef230592813c5611c918f7714ed4a8df  mbedtls-3.6.5.tar.bz2
+diff --git a/contrib/src/mbedtls/rules.mak b/contrib/src/mbedtls/rules.mak
+new file mode 100644
+index 0000000..4cedb66
+--- /dev/null
++++ b/contrib/src/mbedtls/rules.mak
+@@ -0,0 +1,34 @@
++# Mbed TLS
++
++MBEDTLS_VERSION := 3.6.5
++MBEDTLS_URL := $(GITHUB)/Mbed-TLS/mbedtls/releases/download/mbedtls-$(MBEDTLS_VERSION)/mbedtls-$(MBEDTLS_VERSION).tar.bz2
++
++# Same guard as contrib/src/ssh2: without BUILD_NETWORK, libssh2 is not built at
++# all, so its crypto backend should not be.
++ifdef BUILD_NETWORK
++PKGS += mbedtls
++endif
++ifeq ($(call need_pkg,"mbedcrypto"),)
++PKGS_FOUND += mbedtls
++endif
++
++$(TARBALLS)/mbedtls-$(MBEDTLS_VERSION).tar.bz2:
++	$(call download_pkg,$(MBEDTLS_URL),mbedtls)
++
++.sum-mbedtls: mbedtls-$(MBEDTLS_VERSION).tar.bz2
++
++mbedtls: mbedtls-$(MBEDTLS_VERSION).tar.bz2 .sum-mbedtls
++	$(UNPACK)
++	$(MOVE)
++
++# Static only: libssh2 is itself built as a static library in the contribs, and
++# the resulting plugins must not carry an extra runtime dependency.
++MBEDTLS_CONF := -DUSE_STATIC_MBEDTLS_LIBRARY=ON -DUSE_SHARED_MBEDTLS_LIBRARY=OFF \
++	-DENABLE_TESTING=OFF -DENABLE_PROGRAMS=OFF -DGEN_FILES=OFF
++
++.mbedtls: mbedtls toolchain.cmake
++	$(CMAKECLEAN)
++	$(HOSTVARS_CMAKE) $(CMAKE) $(MBEDTLS_CONF)
++	+$(CMAKEBUILD)
++	$(CMAKEINSTALL)
++	touch $@
+diff --git a/contrib/src/ssh2/rules.mak b/contrib/src/ssh2/rules.mak
+index c114ddd..d3abda1 100644
+--- a/contrib/src/ssh2/rules.mak
++++ b/contrib/src/ssh2/rules.mak
+@@ -23,13 +23,37 @@ ssh2: libssh2-$(LIBSSH2_VERSION).tar.xz .sum-ssh2
+ 	$(UNPACK)
+ 	$(MOVE)
+ 
++ifdef HAVE_ANDROID
++# With the Libgcrypt backend, libssh2 only implements the DH-group key exchanges
++# and the "ssh-rsa"/"ssh-dss" host keys: LIBSSH2_RSA_SHA2, LIBSSH2_ECDSA and
++# LIBSSH2_ED25519 are all 0 in src/libgcrypt.h.  OpenSSH 9.8+ (Debian 13
++# "trixie", i.e. the current Ultra.cc hosts) dropped DSA, removed ssh-rsa from the
++# default HostKeyAlgorithms and no longer offers any DH-group KEX, so sftp:// dies
++# during the handshake with LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE, before any
++# authentication attempt.  Mbed TLS provides ECDH key exchange, ECDSA host keys and
++# rsa-sha2-256/512, is dual licensed Apache-2.0 / GPL-2.0-or-later (compatible with
++# the LGPLv2.1 libVLC and the GPLv2 app) and is linked statically, so no new runtime
++# dependency appears.  Desktop, Win32 and iOS keep Libgcrypt.
++DEPS_ssh2 = mbedtls $(DEPS_mbedtls)
++else
+ DEPS_ssh2 = gcrypt $(DEPS_gcrypt)
++endif
+ ifdef HAVE_WINSTORE
+ # uses SecureZeroMemory
+ DEPS_ssh2 += alloweduwp $(DEPS_alloweduwp)
+ endif
+ 
+-SSH2_CONF := -DBUILD_EXAMPLES=OFF -DLIBSSH2_BUILD_DOCS=OFF -DCRYPTO_BACKEND:STRING=Libgcrypt $(BROKEN_GCC_CFLAGS)
++SSH2_CONF := -DBUILD_EXAMPLES=OFF -DLIBSSH2_BUILD_DOCS=OFF $(BROKEN_GCC_CFLAGS)
++ifdef HAVE_ANDROID
++# The explicit paths are needed because libssh2's cmake/FindMbedTLS.cmake would
++# otherwise fall back on the HOST mbedcrypto through pkg-config: the Android
++# toolchain sets PKG_CONFIG_EXECUTABLE but not PKG_CONFIG_LIBDIR.
++SSH2_CONF += -DCRYPTO_BACKEND:STRING=mbedTLS \
++\t-DMBEDTLS_INCLUDE_DIR:PATH=$(PREFIX)/include \
++\t-DMBEDCRYPTO_LIBRARY:FILEPATH=$(PREFIX)/lib/libmbedcrypto.a
++else
++SSH2_CONF += -DCRYPTO_BACKEND:STRING=Libgcrypt
++endif
+ 
+ .ssh2: ssh2 toolchain.cmake
+ 	$(CMAKECLEAN)
+-- 
+2.47.3
+

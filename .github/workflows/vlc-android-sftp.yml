@@ -23,9 +23,9 @@ on:
         default: arm64
         options: [arm64, arm, x86_64, all]
       vlc_android_ref:
-        description: "branche/tag de videolan/vlc-android (3.7.x si tu viens de 3.7.0)"
+        description: "branche/tag de videolan/vlc-android (3.7.1 = derniere publiee)"
         type: string
-        default: master
+        default: 3.7.1
       release_apk:
         description: "APK --release (sinon build de dev signe avec la cle de test)"
         type: boolean
@@ -124,14 +124,30 @@ jobs:
           [ -n "$VLC_SRC" ] || { echo "AUCUN arbre vlc trouve ; fins de init.log :"; tail -20 "$GITHUB_WORKSPACE/init.log"; exit 1; }
           echo "vlc source tree: $VLC_SRC ($(git -C "$VLC_SRC" rev-parse --short HEAD))"
           cd "$VLC_SRC"
-          git apply -v "$GITHUB_WORKSPACE/vlc-sftp/patches/0001-contrib-build-libssh2-against-Mbed-TLS-on-Android.patch" \
-            || patch -p1 --forward < "$GITHUB_WORKSPACE/vlc-sftp/patches/0001-contrib-build-libssh2-against-Mbed-TLS-on-Android.patch"
+          # deux patchs jumeaux : 0001 pour vlc master/4.x, 0002 pour vlc 3.0.x
+          # (c'est la branche que libvlcjni-3.x va chercher pour un APK 3.7.x). Les deux
+          # ne s'appliquent pas au meme endroit : 'DEPS_ssh2 = gcrypt' en 3.0.x contre
+          # 'ifndef HAVE_WIN32 / DEPS_ssh2 += gcrypt' en master. On choisit a l'essai.
+          APPLIED=""
+          for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[12]-*.patch; do
+            if git apply --check "$p" 2>/dev/null; then
+              git apply "$p"; APPLIED="$(basename "$p")"; break
+            fi
+          done
+          if [ -z "$APPLIED" ]; then
+            for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[12]-*.patch; do
+              patch -p1 --forward --dry-run < "$p" > /tmp/p.log 2>&1 && { patch -p1 --forward < "$p"; APPLIED="$(basename "$p")"; break; }
+            done
+          fi
+          [ -n "$APPLIED" ] || { echo "AUCUN patch ne s'applique sur cet arbre vlc ($(git rev-parse --short HEAD))"; exit 1; }
+          echo "  patch retenu : $APPLIED"
           git status --porcelain | sed 's/^/  /'
           # garde-fou immediat : sans ces 3 fichiers, le build suivant ne corrigerait rien
           for f in contrib/src/mbedtls/rules.mak contrib/src/mbedtls/SHA512SUMS contrib/src/ssh2/rules.mak; do
             [ -f "$f" ] || { echo "MANQUANT apres patch: $f"; exit 1; }
           done
-          grep -q 'CRYPTO_BACKEND:STRING=mbedTLS' contrib/src/ssh2/rules.mak || { echo "le flags mbedTLS n'est pas dans rules.mak"; exit 1; }
+          grep -q 'CRYPTO_BACKEND:STRING=mbedTLS' contrib/src/ssh2/rules.mak || { echo "le flag mbedTLS n'est pas dans rules.mak"; exit 1; }
+          grep -q 'DEPS_ssh2 = mbedtls\|DEPS_ssh2 += mbedtls' contrib/src/ssh2/rules.mak || { echo "DEPS_ssh2 n' pointe pas mbedtls"; exit 1; }
           echo "  correctif en place dans $(git rev-parse --short HEAD)"
 
       - name: "Build des contribs + LibVLC + app (-b : pas de reset des sources patchees)"
