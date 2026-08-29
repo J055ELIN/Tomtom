@@ -15,6 +15,24 @@ contribs arrête le build) et `CRYPTO_BACKEND:STRING=mbedTLS` dans `contrib/src/
 Desktop/iOS/Windows inchangés. Licences : Mbed TLS Apache-2.0/GPL-2.0+ avec LGPLv2.1 (libVLC) et
 GPLv2 (app).
 
+## Base choisie et correctifs jumeaux
+
+Le workflow part de **`vlc-android@3.7.1`** (dernière version publiée : `3.7.2`/`3.8.0` répondent
+404, et il n'existe pas de branche `3.7.x`). Ce tag ne contient pas le core VLC : son
+`buildsystem/compile.sh` clonne `libvlcjni` en `libvlcjni-3.x`, qui amène **`videolan/vlc` 3.0.x**.
+Le bug y est identique (`-DCRYPTO_BACKEND:STRING=Libgcrypt`, libssh2 1.11.1) mais le fichier a une
+autre forme, et le patch écrit pour `master` refuse de s'y appliquer.
+
+Il y a donc **deux patchs jumeaux**, et le workflow choisit tout seul : il essaie
+`0001` (vlc `master`, VLC 4.x) puis `0002` (vlc **3.0.x**, la base de la 3.7.1), applique le premier
+qui s'applique, et **échoue explicitement si aucun ne convient** ou si les deux conviennent.
+Contrôle ici : `vlc-sftp/tools/test-choix-patch.sh` (3 cas, tous conformes).
+
+| arbre du core | 0001 | 0002 |
+|---|---|---|
+| `vlc@3.0.x` | refuse | **appliqué** |
+| `vlc@master` | **appliqué** | refuse |
+
 Mesuré : handshake `ecdh-sha2-nistp256` + `rsa-sha2-512`, authentification et **listing SFTP OK**
 — y compris en binaires `arm64-v8a` exécutés sous qemu (Voir `RESULTATS-CROSS-ANDROID.txt` du kit).
 
