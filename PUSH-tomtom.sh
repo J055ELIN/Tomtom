@@ -50,7 +50,7 @@ for ((i=1;i<=$#;i++)); do
     case "$a" in
         --ref=*)  REF="${a#--ref=}" ;;
         --ref)    REF="${@:i+1:1}"; SKIP=1; [ -n "$REF" ] || { echo "--ref attend une valeur (ex. --ref=3.7.1 ou --ref master)" >&2; exit 2; } ;;
-        --dry-run|--watch) [ -z "$MODE" ] && MODE="$a" ;;
+        --dry-run|--watch|--help|-h) [ -z "$MODE" ] && MODE="$a" ;;
         *) ARGS+=("$a") ;;
     esac
 done
