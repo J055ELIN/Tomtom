@@ -32,6 +32,11 @@ ABI="${ABI:-arm64}"; PROBE="${PROBE_SERVER:-}"
 # La version de vlc-android a construire n'est PAS dupliquee ici : on lit le defaut reel du
 # workflow, pour que le dispatch et le YAML ne puissent pas diverger (sinon on croirait lancer
 # une 3.7.1 et on lancerait en fait autre chose).  Overrides : VLC_ANDROID_REF=... ou --ref=...
+workflow_default_branch() {
+    curl -s -m 20 "https://api.github.com/repos/$REPO" 2>/dev/null \
+        | python3 -c "import json,sys;print(json.load(sys.stdin).get('default_branch','?'))" 2>/dev/null || echo "?"
+}
+
 workflow_default() {
     [ -f "$WF_FILE" ] || return 1
     local v
@@ -123,14 +128,63 @@ perm=$(curl -s -m 20 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.co
 [ "$perm" = "True" ] || { echo "   ce token n'a pas le droit d'ecrire (permissions.push=$perm)"; exit 8; }
 
 echo "2/3 poussée de la branche $BRANCH"
-git -C "$HERE" push -f "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" "HEAD:$BRANCH" 2>&1 | red | sed 's/^/   /'
+SHA=$(git -C "$HERE" rev-parse HEAD)
+git -C "$HERE" push -f "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" "HEAD:$BRANCH" > /tmp/push.$$.log 2>&1
+prc=$?
+red < /tmp/push.$$.log | sed 's/^/   /'; rm -f /tmp/push.$$.log
+[ $prc -eq 0 ] || { echo "   la poussee a echoue (code $prc) -> on ne declenche rien" >&2; exit 8; }
+echo "   poussee ok : $BRANCH @ ${SHA:0:9}"
 
 echo "3/3 declenchement du workflow"
+# Un workflow qui ne vit QUE sur une branche non par defaut ne peut PAS etre declenche par
+# /dispatches : GitHub ne liste pour workflow_dispatch que les fichiers presents sur la branche
+# par defaut. Mesure ici : POST -> HTTP 404 alors que le fichier etait sur la branche poussee.
+# D'ou le declencheur 'push' dans le YAML : la poussee SUISANTE demarre le run, et ce bloc-la
+# attend ce run plutot que de pretendre a un dispatch impossible.
+HAS_PUSH=0
+if [ -f "$WF_FILE" ] && grep -q '^  push:' "$WF_FILE" && grep -q "branches: \[$BRANCH\]" "$WF_FILE"; then
+    HAS_PUSH=1
+fi
+if [ "$HAS_PUSH" = 1 ]; then
+    echo "   le YAML declare 'push' sur $BRANCH : on attend le run cree par cette poussee (sha ${SHA:0:9})"
+    run=""
+    for i in $(seq 1 20); do
+        sleep 3
+        run=$(curl -s -m 20 "https://api.github.com/repos/$REPO/actions/runs?head_sha=$SHA&per_page=20" \
+            | python3 -c "
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: raise SystemExit(0)
+for r in d.get('workflow_runs',[]):
+    if '$WF' in r.get('path','') or r.get('name','').lower().startswith('vlc android sftp'):
+        print(f\"#{r['run_number']} {r['status']}/{r.get('conclusion')} {r['html_url']}\"); break
+")
+        [ -n "$run" ] && break
+    done
+    if [ -n "$run" ]; then
+        echo "   run demarre : $run"
+        echo
+        echo "Suivre sans token :  ./PUSH-tomtom.sh --watch"
+        echo "En direct        :  https://github.com/$REPO/actions"
+        exit 0
+    fi
+    echo "   aucun run vu pour ce sha apres ~60 s (GitHub peut mettre 1-2 min) : on tente le dispatch"
+fi
 resp=$(curl -s -o /dev/null -w '%{http_code}' -m 30 -X POST -H "Authorization: Bearer $GH_TOKEN" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/$REPO/actions/workflows/$WF/dispatches" \
     -d "{\"ref\":\"$BRANCH\",\"inputs\":{\"abi\":\"$ABI\",\"vlc_android_ref\":\"$REF\",\"probe_server\":\"$PROBE\"}}")
-echo "   dispatch -> HTTP $resp $([ "$resp" = 204 ] && echo "(accepte)" || echo "(ECHEC : verifie le nom du workflow et les droits Actions)")"
+if [ "$resp" = 204 ]; then
+    echo "   dispatch -> HTTP 204 (accepte)"
+elif [ "$resp" = 404 ]; then
+    echo "   dispatch -> HTTP 404. Ce n'est PAS un souci de droits : workflow_dispatch n'est"
+    echo "     proposable que si $WF existe aussi sur la branche par defaut ($( workflow_default_branch ))."
+    echo "     Deux issues : (a) le YAML declare un declencheur 'push' sur $BRANCH, donc une poussee"
+    echo "     suffit ; (b) ou tu fusionnes le fichier sur la branche par defaut - a ne faire que si"
+    echo "     tu l'as decide, car ici la branche par defaut sert $REPO de canal de mise a jour."
+else
+    echo "   dispatch -> HTTP $resp (verifie le nom du workflow et les droits Actions)"
+fi
 echo
 echo "Suivre sans token :  ./PUSH-tomtom.sh --watch"
 echo "En direct        :  https://github.com/$REPO/actions"
