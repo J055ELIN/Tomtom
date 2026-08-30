@@ -98,10 +98,32 @@ jobs:
           PATCHED_RC=$?
           echo "patched rc=$PATCHED_RC"
           echo "--- sshd handshake log ---"
-          grep -E "no matching|host key|kex" /tmp/sshd_test.log | tail -20 || true
+          grep -E "no matching|host key|kex" sshd-test/sshd.log | tail -20 || true
           if [ "$UNPATCHED_RC" -eq 0 ]; then echo "FAIL: unpatched unexpectedly succeeded"; exit 1; fi
           if [ "$PATCHED_RC" -ne 0 ]; then echo "FAIL: patched client did not negotiate rsa-sha2"; exit 1; fi
           echo "TEST PASSED: patch enables rsa-sha2 negotiation"
+          echo "UNPATCHED_RC=$UNPATCHED_RC" > test-results.txt
+          echo "PATCHED_RC=$PATCHED_RC" >> test-results.txt
+          echo "RESULT=PASS" >> test-results.txt
+
+      - name: Publish test results to repo (so they can be read from outside GitHub)
+        if: always()
+        run: |
+          mkdir -p results
+          {
+            echo "## Test run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Run URL: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            cat test-results.txt 2>/dev/null || echo "(no result file)"
+            echo ""
+            echo "### sshd log"
+            cat sshd-test/sshd.log 2>/dev/null || echo "(no sshd log)"
+          } > results/latest.txt
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout -B ci-results
+          git add results/latest.txt
+          git commit -m "ci: publish libssh2 test results (run $GITHUB_RUN_ID)" || echo "nothing new to commit"
+          git push origin ci-results --force || echo "push failed"
 
   # --------------------------------------------------------------
   # 2) Build the full VLC Android APK (Dev flavor, arm64) with the fix
