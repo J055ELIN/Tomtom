@@ -111,9 +111,22 @@ jobs:
       - name: "Dependances (liste verifiee en buildant les contribs en cross)"
         run: |
           set -euo pipefail
+          # Diagnostic AVANT installation : sur le run #7, mpg123 casse avec
+          # "configure.ac:276: error: possibly undefined macro: LT_SYS_MODULE_EXT". Cette macro est
+          # definie dans ltdl.m4, fourni par libltdl-dev (et NON par libtool), et libtoolize ne copie
+          # que libtool/ltoptions/ltsugar/ltversion/lt~obsolete .m4 : l'arbre ne peut donc pas se
+          # reparer tout seul. Ce bloc imprime l'etat reel du runner pour que ce diagnostic soit
+          # verifiable dans le journal, pas seulement inferen.
+          echo "  == etat du runner avant apt =="
+          for m in ltdl.m4 libtool.m4 ltsugar.m4 ltoptions.m4; do
+            f="/usr/share/aclocal/$m"
+            if [ -f "$f" ]; then echo "     $m : presente ($(dpkg -S "$f" 2>/dev/null | cut -d: -f1))"; else echo "     $m : ABSENTE"; fi
+          done
+          apt-cache policy libltdl-dev 2>/dev/null | head -3 | sed 's/^/     /'
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
-            autoconf automake libtool autopoint gettext pkg-config make cmake ninja-build \
+            autoconf automake libtool libltdl-dev autoconf-archive autopoint gettext \
+            pkg-config make cmake ninja-build \
             gcc g++ patch unzip xz-utils curl git python3 flex bison gperf yasm nasm \
             ant protobuf-compiler ragel subversion zip libtool-bin >> /dev/null
           for t in autopoint cmake ninja libtoolize pkg-config; do
