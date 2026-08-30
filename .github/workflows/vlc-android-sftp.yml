@@ -54,7 +54,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  VLCFIX_ANDROID_SDK: ${{ github.workspace }}/android-sdk
+  ANDROID_SDK: ${{ github.workspace }}/android-sdk
   # Ces trois valeurs ne viennent pas d'un gout : elles sont mesurees.
   # - compileSdk/targetSdk de vlc-android@3.7.1 = 36 (build.gradle l. 58-59) -> plateforme android-36.
   # - NDK : le libvlc.so de l'APK OFFICIEL VLC-Android-3.7.1-arm64-v8a.apk porte dans sa section
@@ -130,11 +130,11 @@ jobs:
       - name: "Android SDK cmdline-tools + plateforme + build-tools + NDK"
         run: |
           set -euo pipefail
-          mkdir -p "$VLCFIX_ANDROID_SDK/cmdline-tools"
+          mkdir -p "$ANDROID_SDK/cmdline-tools"
           curl -fsSL -o /tmp/clt.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q /tmp/clt.zip -d "$VLCFIX_ANDROID_SDK/cmdline-tools"
-          mv "$VLCFIX_ANDROID_SDK/cmdline-tools/cmdline-tools" "$VLCFIX_ANDROID_SDK/cmdline-tools/latest"
-          export PATH="$VLCFIX_ANDROID_SDK/cmdline-tools/latest/bin:$PATH"
+          unzip -q /tmp/clt.zip -d "$ANDROID_SDK/cmdline-tools"
+          mv "$ANDROID_SDK/cmdline-tools/cmdline-tools" "$ANDROID_SDK/cmdline-tools/latest"
+          export PATH="$ANDROID_SDK/cmdline-tools/latest/bin:$PATH"
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager --list > /tmp/sdklist.txt 2>/dev/null || { echo "  sdkmanager --list muet"; : > /tmp/sdklist.txt; }
           # diagnostic : 3 lignes reelles de la liste, pour que le journal prouve que la
@@ -165,11 +165,11 @@ jobs:
           BT=$(resoudre 'build-tools;' "$VLCFIX_SDK_BUILD_TOOLS") || exit 1
           echo "  paquets retenus : platform-tools platforms;$PLAT build-tools;$BT ndk;$NDK"
           sdkmanager --install "platform-tools" "platforms;$PLAT" "build-tools;$BT" "ndk;$NDK" > /dev/null
-          NDKDIR=$(ls -d "$VLCFIX_ANDROID_SDK/ndk/$NDK" 2>/dev/null || ls -d "$VLCFIX_ANDROID_SDK"/ndk/* | sort -V | tail -1)
+          NDKDIR=$(ls -d "$ANDROID_SDK/ndk/$NDK" 2>/dev/null || ls -d "$ANDROID_SDK"/ndk/* | sort -V | tail -1)
           [ -d "$NDKDIR" ] || { echo "  NDK absent apres installation"; exit 1; }
           echo "ANDROID_NDK=$NDKDIR" >> "$GITHUB_ENV"
-          echo "VLCFIX_ANDROID_SDK=$VLCFIX_ANDROID_SDK" >> "$GITHUB_ENV"
-          echo "sdk.dir=$VLCFIX_ANDROID_SDK" > local.properties
+          echo "ANDROID_SDK=$ANDROID_SDK" >> "$GITHUB_ENV"
+          echo "sdk.dir=$ANDROID_SDK" > local.properties
           grep -m1 'Pkg.Revision' "$NDKDIR/source.properties" | sed 's/^/  NDK installe : /'
           # cmake : demande en dur 'cmake;3.22.1' au run #1, retire depuis ; on prend celui du
           # runner et on verifie qu'il est assez recent pour les contribs (>3.16).
