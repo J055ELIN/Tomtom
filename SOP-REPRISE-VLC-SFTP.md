@@ -94,6 +94,23 @@ qui l'a fait sur `master` après 1.11.1) — petit, ciblé, n'affecte que le han
 | `vlc-sftp-fix/workflow.ylm` | 🗑️ obsolète (faute de frappe initiale, à supprimer) |
 | `.github/workflows/github/workflows/vlc-sftp-fix.yml` | 🗑️ obsolète (chemin erroné, à supprimer) |
 
+> **⚠️ Ce §3.2 est périmé depuis le ménage du 30/08/2026 (ajout de l'agent, texte d'origine conservé).**
+> Les lignes marquées 🗑️ ci-dessus **et** celles marquées ✅/⚠️ ont été supprimées du dépôt :
+> `vlc-sftp-fix/` (y compris `workflow.yml`, `workflow.ylm`, `patches/`, `test/`, `README.md`),
+> `.github/workflows/vlc-sftp-fix.yml`, et le doublon mort `.github/workflows/github/workflows/vlc-sftp-fix.yml`
+> (les deux dernières commandes « Étape 2 » n'ont donc plus d'objet, et l'« Étape 1 — SYNC DU WORKFLOW »
+> n'a plus de sens : il n'y a plus deux copies à désynchroniser).
+> Motif : l'approche `gcrypt` + `rsa-sha2` décrite ici a été mesurée insuffisante (5 runs en échec).
+> La cause racine retenue est ailleurs — `contrib/src/ssh2/rules.mak` impose
+> `-DCRYPTO_BACKEND:STRING=Libgcrypt`, et `src/libgcrypt.h` de libssh2 annule `LIBSSH2_RSA_SHA2`,
+> `LIBSSH2_ECDSA`, `LIBSSH2_ED25519` : le client ne propose donc plus aucun KEX ni clé d'hôte
+> acceptés par OpenSSH 9.8+ (Debian 13). Le correctif construit le travail **en mbedTLS**.
+> Où est le travail désormais : branche **`vlc-sftp-build`**, workflow
+> `.github/workflows/vlc-android-sftp.yml`, charge utile `vlc-sftp/` ; kit complet (patchs, outils
+> d'audit, résultats, procédure de reproducttion) hors dépôt sous `vlc-android-sftp-debian13/`.
+> Rétablir l'ancien état : `git revert` des commits « menage(1/3)…(3/3) », ou `git checkout avant-menage/main -- vlc-sftp-fix .github/workflows/vlc-sftp-fix.yml`.
+> Le reste de la SOP (contraintes §4, rôles §5, portique de vérification, soft-ban Ultra.cc) reste valable.
+
 ### 3.3 Statut CI (derniers runs de `VLC Android SFTP fix build`)
 
 | Run | Déclencheur | Résultat |

@@ -5,7 +5,7 @@ Application Android (Java, sans dépendance externe) qui se connecte en **Blueto
 avec elle en utilisant le protocole observé dans l'application officielle
 « TomTom Sports » 10.0.9 (voir `analyse_tomtom_sports.md`).
 
-> L'APK pré-compilé se trouve à la racine : **`TomTomBridge-debug.apk`** (signé debug,
+> L'APK pré-compilé se trouve dans `releases/` : **`TomTomBridge-debug.apk`** (signé debug,
 > ~42 Ko, minSdk 23 / targetSdk 33).
 
 ## Fonctionnalités
@@ -26,9 +26,9 @@ avec elle en utilisant le protocole observé dans l'application officielle
 
 ```bash
 # via adb (débogage USB activé) :
-adb install TomTomBridge-debug.apk
+adb install TomTomBridge/releases/TomTomBridge-debug.apk
 ```
-Ou copier `TomTomBridge-debug.apk` sur le téléphone et l'ouvrir (autoriser
+Ou copier `TomTomBridge/releases/TomTomBridge-debug.apk` sur le téléphone et l'ouvrir (autoriser
 « sources inconnues »).
 
 ## Utiliser
