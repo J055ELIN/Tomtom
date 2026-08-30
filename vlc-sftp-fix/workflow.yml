@@ -69,7 +69,9 @@ jobs:
           cmake --install build-unpatched
           gcc -o client-unpatched vlc-sftp-fix/test/client.c \
             -I$PWD/prefix-unpatched/include -L$PWD/prefix-unpatched/lib \
+            -Wl,-rpath,$PWD/prefix-unpatched/lib \
             -lssh2 -lgcrypt -lgpg-error -pthread
+          ldd ./client-unpatched | grep -i ssh2 || true
 
       - name: Build PATCHED libssh2 1.11.1 (Libgcrypt)
         run: |
@@ -84,27 +86,41 @@ jobs:
           cmake --install build-patched
           gcc -o client-patched vlc-sftp-fix/test/client.c \
             -I$PWD/prefix-patched/include -L$PWD/prefix-patched/lib \
+            -Wl,-rpath,$PWD/prefix-patched/lib \
             -lssh2 -lgcrypt -lgpg-error -pthread
+          ldd ./client-patched | grep -i ssh2 || true
 
       - name: Run handshake tests against modern sshd
         run: |
           set +e
-          echo "=== UNPATCHED (must FAIL) ==="
-          ./client-unpatched 127.0.0.1 2222
+          echo "=== UNPATCHED (must FAIL: no rsa-sha2 offered) ==="
+          ./client-unpatched 127.0.0.1 2222 > unpatched.out 2>&1
           UNPATCHED_RC=$?
           echo "unpatched rc=$UNPATCHED_RC"
+          cat unpatched.out
           echo "=== PATCHED (must SUCCEED with rsa-sha2) ==="
-          ./client-patched 127.0.0.1 2222
+          ./client-patched 127.0.0.1 2222 > patched.out 2>&1
           PATCHED_RC=$?
           echo "patched rc=$PATCHED_RC"
-          echo "--- sshd handshake log ---"
-          grep -E "no matching|host key|kex" sshd-test/sshd.log | tail -20 || true
+          cat patched.out
+          {
+            echo "UNPATCHED_RC=$UNPATCHED_RC"
+            echo "PATCHED_RC=$PATCHED_RC"
+            echo "UNPATCHED_OUT:"
+            cat unpatched.out
+            echo "PATCHED_OUT:"
+            cat patched.out
+            echo "SSHD_LOG:"
+            cat sshd-test/sshd.log
+            if [ "$UNPATCHED_RC" -ne 0 ] && [ "$PATCHED_RC" -eq 0 ]; then
+              echo "RESULT=PASS"
+            else
+              echo "RESULT=FAIL: unpatched=$UNPATCHED_RC patched=$PATCHED_RC"
+            fi
+          } > test-results.txt
           if [ "$UNPATCHED_RC" -eq 0 ]; then echo "FAIL: unpatched unexpectedly succeeded"; exit 1; fi
-          if [ "$PATCHED_RC" -ne 0 ]; then echo "FAIL: patched client did not negotiate rsa-sha2"; exit 1; fi
+          if [ "$PATCHED_RC" -ne 0 ]; then echo "FAIL: patched client did not negotiate rsa-sha2 (rc=$PATCHED_RC)"; exit 1; fi
           echo "TEST PASSED: patch enables rsa-sha2 negotiation"
-          echo "UNPATCHED_RC=$UNPATCHED_RC" > test-results.txt
-          echo "PATCHED_RC=$PATCHED_RC" >> test-results.txt
-          echo "RESULT=PASS" >> test-results.txt
 
       - name: Publish test results to repo (so they can be read from outside GitHub)
         if: always()
