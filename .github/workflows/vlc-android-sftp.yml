@@ -320,60 +320,66 @@ jobs:
           [ $rc -eq 0 ] || { echo "::error::compile.sh a echoue (code $rc) ; 60 lignes autour de la 1ere erreur :"; grep -n -m1 -E 'error:|Error [0-9]|\*\*\* ' "$GITHUB_WORKSPACE/build.log" | head -1 | cut -d: -f1 | while read -r n; do [ -n "$n" ] && sed -n "$((n>25?n-25:1)),$((n+25))p" "$GITHUB_WORKSPACE/build.log" | cut -c1-200 | sed 's/^/    /'; done; exit 1; }
           echo "  => compile.sh termine (code 0) ; $(( $(wc -l < "$GITHUB_WORKSPACE/build.log") )) lignes de journal"
 
-      - name: "Sondes de liens : ce qui a ete construit, ce que pkg-config declare, ce que le configure a decide"
+      - name: "Sondes de liens et de bilan (diagnostic pur, ne peut pas faire echouer le run)"
         if: always()
+        continue-on-error: true
         run: |
+          # Etape de diagnostic pur : elle est jouee toujours (if: always) et ne peut pas rougir
+          # le run (continue-on-error + `true` final). Le run #10 a ete rouge A CAUSE d'elle : son
+          # dernier commando etait un grep sans correspondance, et grep sort 1 sur jeu vide. Le
+          # build, lui, etait vert (compile.sh code 0, BUILD SUCCESSFUL, 0 symbole non resolu).
           set -uo pipefail
           cd "$GITHUB_WORKSPACE"
-          # Etape de sondes, jouee TOUJOURS (if: always). Elle existe parce que le run #8 a echoue a
-          # l'edition de liens de libvlc.so avec "undefined symbol: gpgrt_fclose" et que le tail de
-          # 30 lignes ne permettait pas de trancher entre deux mecanismes : (a) libgpg-error jamais
-          # construit, (b) construit mais absent de la ligne de liens. Ces trois sondes separent les deux.
           VJ="$VLC_ANDROID/libvlcjni"
-          PREFIX="$(find "$VJ/vlc/contrib" -maxdepth 1 -type d -name '*-linux-android' 2>/dev/null | head -1)"
-          echo "== 1. ce qui existe reellement dans le prefix des contribs (${PREFIX:-introuvable}) =="
+          # Le prefix d'INSTALLATION est contrib/<tuple> ; contrib/contrib-<tuple> est le repertoire
+          # de BUILD. Aux runs #9 et #10 mon motif attrapait les deux et head -1 renvoyait celui de
+          # build -> tous les « absent » marques dans ces runs etaient des faux negatifs. D'ou le
+          # grep -v '/contrib-' explicite, qui n'a rien d'esthetique.
+          PREFIX="$(ls -d "$VJ"/vlc/contrib/*-linux-android 2>/dev/null | grep -v '/contrib-' | head -1)"
+          echo "== 1. prefix des contribs : ${PREFIX:-introuvable} =="
           if [ -n "${PREFIX:-}" ]; then
             for l in libssh2 libgcrypt libgpg-error libmbedcrypto libmbedtls libmbedx509; do
               if [ -f "$PREFIX/lib/$l.a" ]; then
-                printf "   %-16s PRESENT  %s o\n" "$l.a" "$(stat -c%s "$PREFIX/lib/$l.a")"
+                printf '   %-16s PRESENT  %s o\n' "$l.a" "$(stat -c%s "$PREFIX/lib/$l.a")"
               else
-                printf "   %-16s absent\n" "$l.a"
+                printf '   %-16s absent\n' "$l.a"
               fi
             done
-            echo "== 2. ce que libssh2 declare a pkg-config (le Libs.private qui decide la ligne de liens) =="
-            for pc in "$PREFIX"/lib/pkgconfig/libssh2.pc "$PREFIX"/lib/pkgconfig/gcrypt.pc; do
-              [ -f "$pc" ] || { echo "   (pas de $(basename "$pc"))"; continue; }
-              echo "   --- $(basename "$pc")"
-              grep -E '^(Libs|Libs.private|Requires|Requires.private|Cflags)' "$pc" | sed 's/^/      /'
-            done
-            echo "== 3. ce que le configure du core a decide =="
-            for f in "$VJ/vlc/config.log" "$VJ/vlc/config.status"; do
-              [ -f "$f" ] || continue
-              echo "   --- $(basename "$f")"
-              grep -aE "checking for libgcrypt|with_libgcrypt|sftp|libgcrypt_|GCRYPT_LIBS|LIBSSH2" "$f" 2>/dev/null | tail -8 | sed 's/^/      /' | cut -c1-160
+            echo "== 2. les .pc qui fabriquent VLC_CONTRIB_LDFLAGS (compile-libvlc.sh l.724) =="
+            echo "   $(ls "$PREFIX/lib/pkgconfig" 2>/dev/null | wc -l) modules .pc installes"
+            for pc in gcrypt libgpg-error libssh2 mbedtls; do
+              f="$PREFIX/lib/pkgconfig/$pc.pc"
+              if [ -f "$f" ]; then echo "   --- $pc.pc"; grep -E '^(Libs|Requires)' "$f" | sed 's/^/      /'; else echo "   --- $pc.pc : absent"; fi
             done
           else
             echo "   aucun dossier de contribs : le build n'a pas atteint cette phase"
           fi
-          echo "== 3bis. les .pc qui fabriquent la ligne de liens =="
-          for pc in gcrypt libgpg-error libssh2 mbedtls; do
-            f="$PREFIX/lib/pkgconfig/$pc.pc"
-            if [ -f "$f" ]; then echo "   --- $pc.pc"; grep -E '^(Libs|Requires)' "$f" | sed 's/^/      /'; else echo "   --- $pc.pc : absent du prefix"; fi
-          done
+          echo "== 3. ligne de liens retenue par ndk-build, et ordre des archives statiques =="
           W=$(grep -an 'non-system libraries in linker flags' build.log 2>/dev/null | head -1 | cut -d: -f1)
           if [ -n "${W:-}" ]; then
-            echo "   positions des -l dans la ligne retenue par ndk-build (ligne $W du journal) :"
-            awk -v n="$W" 'NR==n' build.log | grep -oE -- '-l[A-Za-z0-9_.+-]+' | grep -nE -- '-l(gcrypt|gpg-error|ssh2|mbedcrypto|mbedx509|lzma|xml2)$' | sed 's/^/      /' | head -12
+            awk -v n="$W" 'NR==n' build.log > /tmp/ldline.txt
+            echo "   $(grep -oE -- '-l[A-Za-z0-9_.+-]+' /tmp/ldline.txt | wc -l) tokens -l ; positions (1-based) des interesting :"  # -c compterait des LIGNES : la ligne de liens en est une seule
+            grep -oE -- '-l[A-Za-z0-9_.+-]+' /tmp/ldline.txt | grep -nE -- '-l(gcrypt|gpg-error|ssh2|mbedcrypto|mbedx509)$' | sed 's/^/      /'
+            # en liaison statique l'archive appelee doit SUIVRE l'appelante : -lgpg-error apres -lgcrypt.
+            if grep -q -- '-lgpg-error' /tmp/ldline.txt; then
+              echo "   garde : -lgpg-error est dans la ligne (patch 0004 en action)"
+            else
+              echo "::warning::-lgpg-error ABSENTE de la ligne de liens : le patch 0004 n'est pas arrive jusqu'ici"
+            fi
+          else
+            echo "   pas de warning ndk-build « non-system libraries » (build arrete avant les liens)"
           fi
-          echo "== 4. lignes de liens et d'erreurs du journal complet =="
+          echo "== 4. bilan du journal complet =="
           if [ -f build.log ]; then
             echo "   build.log : $(wc -l < build.log) lignes, $(stat -c%s build.log) o"
-            grep -anE 'undefined symbol|ld\.lld|cannot find -l|Error [0-9]+$' build.log | tail -12 | sed 's/^/     /' | cut -c1-170
-            grep -anE 'libvlc\.so' build.log | grep -aE '\-l' | tail -2 | sed 's/^/     ligne de liens : /' | cut -c1-300
-          else
-            echo "   pas de build.log"
+            echo "   undefined symbol : $(grep -ac 'undefined symbol' build.log) | ld.lld: error : $(grep -ac 'ld.lld: error' build.log) | BUILD SUCCESSFUL : $(grep -ac 'BUILD SUCCESSFUL' build.log)"
+            grep -anE 'Error [0-9]+$' build.log | grep -av 'ignored' | tail -5 | sed 's/^/   vrai echec : /'
           fi
-      
+          echo "== 5. APK produites sur le disque du runner =="
+          find "$VLC_ANDROID" -name '*.apk' 2>/dev/null | head -5 | while read -r a; do
+            printf '   %s  %s o\n' "$a" "$(stat -c%s "$a")"
+          done
+          true
       - name: "Journal de build complet en artefact (pour lire la 1ere erreur, pas que la derniere)"
         if: always()
         uses: actions/upload-artifact@v4
