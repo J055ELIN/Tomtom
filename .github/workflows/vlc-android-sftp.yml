@@ -31,7 +31,7 @@ on:
   workflow_dispatch:
     inputs:
       abi:
-        description: "ABI a construire"
+        description: "VLCFIX_ABI a construire"
         type: choice
         default: arm64
         options: [arm64, arm, x86_64, all]
@@ -54,7 +54,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ANDROID_SDK: ${{ github.workspace }}/android-sdk
+  VLCFIX_ANDROID_SDK: ${{ github.workspace }}/android-sdk
   # Ces trois valeurs ne viennent pas d'un gout : elles sont mesurees.
   # - compileSdk/targetSdk de vlc-android@3.7.1 = 36 (build.gradle l. 58-59) -> plateforme android-36.
   # - NDK : le libvlc.so de l'APK OFFICIEL VLC-Android-3.7.1-arm64-v8a.apk porte dans sa section
@@ -63,18 +63,18 @@ env:
   #   ndk;26.1.12297006 : ce paquet n'existe pas dans l'index sdkmanager, run #1 mort la-dessus en
   #   2'18" avec "Warning: Failed to find package 'ndk;26.1.12297006'".)
   #   Le meme resoudre() se rabat sur la derniere version disponible si Google retire la notre.
-  SDK_BUILD_TOOLS: "36.0.0"
-  SDK_PLATFORM: "android-36"
-  NDK_VERSION: "28.2.13676358"
+  VLCFIX_SDK_BUILD_TOOLS: "36.0.0"
+  VLCFIX_SDK_PLATFORM: "android-36"
+  VLCFIX_NDK_VERSION: "28.2.13676358"
   # Les inputs sont VIDES quand le run n'est pas declenche par workflow_dispatch. Mesure au
   # run #2 : 'git clone --branch ""' -> "fatal: Remote branch  not found in upstream origin",
   # etape 7 morte en 10 s. Comme on se declenche par poussee, ce sont ICI les vraies valeurs
   # par defaut ; un dispatch ne fait que les surcharger. ('&&/||' rend 'false' aussi bien pour
-  # faux que pour absent : voulu pour RELEASE_APK.)
-  ABI: ${{ inputs.abi || 'arm64' }}
-  VLC_ANDROID_REF: ${{ inputs.vlc_android_ref || '3.7.1' }}
-  RELEASE_APK: ${{ inputs.release_apk && 'true' || 'false' }}
-  PROBE_SERVER: ${{ inputs.probe_server }}
+  # faux que pour absent : voulu pour VLCFIX_RELEASE_APK.)
+  VLCFIX_ABI: ${{ inputs.abi || 'arm64' }}
+  VLCFIX_VLC_ANDROID_REF: ${{ inputs.vlc_android_ref || '3.7.1' }}
+  VLCFIX_RELEASE_APK: ${{ inputs.release_apk && 'true' || 'false' }}
+  VLCFIX_PROBE_SERVER: ${{ inputs.probe_server }}
 
 jobs:
   audit-serveur:
@@ -87,7 +87,7 @@ jobs:
         run: |
           set -uo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq nmap > /dev/null
-          H="${PROBE_SERVER:-${{ inputs.probe_server }}}"
+          H="${VLCFIX_PROBE_SERVER:-${{ inputs.probe_server }}}"
           echo "  audit de $H (22) - cote serveur uniquement"
           nmap -Pn -sV --version-light --script ssh2-enum-algos -p22 "$H" 2>/dev/null \
             | sed -n '/kex_algorithms/,/ssh_host_key/p' | head -40 | sed 's/^/    /'
@@ -130,11 +130,11 @@ jobs:
       - name: "Android SDK cmdline-tools + plateforme + build-tools + NDK"
         run: |
           set -euo pipefail
-          mkdir -p "$ANDROID_SDK/cmdline-tools"
+          mkdir -p "$VLCFIX_ANDROID_SDK/cmdline-tools"
           curl -fsSL -o /tmp/clt.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q /tmp/clt.zip -d "$ANDROID_SDK/cmdline-tools"
-          mv "$ANDROID_SDK/cmdline-tools/cmdline-tools" "$ANDROID_SDK/cmdline-tools/latest"
-          export PATH="$ANDROID_SDK/cmdline-tools/latest/bin:$PATH"
+          unzip -q /tmp/clt.zip -d "$VLCFIX_ANDROID_SDK/cmdline-tools"
+          mv "$VLCFIX_ANDROID_SDK/cmdline-tools/cmdline-tools" "$VLCFIX_ANDROID_SDK/cmdline-tools/latest"
+          export PATH="$VLCFIX_ANDROID_SDK/cmdline-tools/latest/bin:$PATH"
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager --list > /tmp/sdklist.txt 2>/dev/null || { echo "  sdkmanager --list muet"; : > /tmp/sdklist.txt; }
           # diagnostic : 3 lignes reelles de la liste, pour que le journal prouve que la
@@ -160,16 +160,16 @@ jobs:
               printf '%s' "$alt"
           }
 
-          NDK=$(resoudre 'ndk;' "$NDK_VERSION") || exit 1
-          PLAT=$(resoudre 'platforms;' "$SDK_PLATFORM") || exit 1
-          BT=$(resoudre 'build-tools;' "$SDK_BUILD_TOOLS") || exit 1
+          NDK=$(resoudre 'ndk;' "$VLCFIX_NDK_VERSION") || exit 1
+          PLAT=$(resoudre 'platforms;' "$VLCFIX_SDK_PLATFORM") || exit 1
+          BT=$(resoudre 'build-tools;' "$VLCFIX_SDK_BUILD_TOOLS") || exit 1
           echo "  paquets retenus : platform-tools platforms;$PLAT build-tools;$BT ndk;$NDK"
           sdkmanager --install "platform-tools" "platforms;$PLAT" "build-tools;$BT" "ndk;$NDK" > /dev/null
-          NDKDIR=$(ls -d "$ANDROID_SDK/ndk/$NDK" 2>/dev/null || ls -d "$ANDROID_SDK"/ndk/* | sort -V | tail -1)
+          NDKDIR=$(ls -d "$VLCFIX_ANDROID_SDK/ndk/$NDK" 2>/dev/null || ls -d "$VLCFIX_ANDROID_SDK"/ndk/* | sort -V | tail -1)
           [ -d "$NDKDIR" ] || { echo "  NDK absent apres installation"; exit 1; }
           echo "ANDROID_NDK=$NDKDIR" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK=$ANDROID_SDK" >> "$GITHUB_ENV"
-          echo "sdk.dir=$ANDROID_SDK" > local.properties
+          echo "VLCFIX_ANDROID_SDK=$VLCFIX_ANDROID_SDK" >> "$GITHUB_ENV"
+          echo "sdk.dir=$VLCFIX_ANDROID_SDK" > local.properties
           grep -m1 'Pkg.Revision' "$NDKDIR/source.properties" | sed 's/^/  NDK installe : /'
           # cmake : demande en dur 'cmake;3.22.1' au run #1, retire depuis ; on prend celui du
           # runner et on verifie qu'il est assez recent pour les contribs (>3.16).
@@ -181,8 +181,8 @@ jobs:
       - name: "Sources vlc-android (+ sous-modules libvlc / vlc)"
         run: |
           set -euo pipefail
-          echo "  ref demandee : $VLC_ANDROID_REF | abi : $ABI | release : $RELEASE_APK"
-          git clone --recursive --depth 1 --branch "$VLC_ANDROID_REF" \
+          echo "  ref demandee : $VLCFIX_VLC_ANDROID_REF | abi : $VLCFIX_ABI | release : $VLCFIX_RELEASE_APK"
+          git clone --recursive --depth 1 --branch "$VLCFIX_VLC_ANDROID_REF" \
             https://code.videolan.org/videolan/vlc-android.git _va
           echo "VLC_ANDROID=$GITHUB_WORKSPACE/_va" >> "$GITHUB_ENV"
 
@@ -198,7 +198,7 @@ jobs:
           git config --global user.name  "vlc-sftp CI"
           git config --global --add safe.directory '*' || true
           set +e                      # on tolere un --init en echec : l'arbre est reparable juste apres,
-          ./buildsystem/compile.sh --init -a "$ABI" > "$GITHUB_WORKSPACE/init.log" 2>&1   # mais on l'affiche
+          ./buildsystem/compile.sh --init -a "$VLCFIX_ABI" > "$GITHUB_WORKSPACE/init.log" 2>&1   # mais on l'affiche
           rc=$?
           set -e
           echo "  compile.sh --init : exit=$rc ; fin du journal :"
@@ -273,10 +273,10 @@ jobs:
         run: |
           set -euo pipefail
           cd "$VLC_ANDROID"
-          args="-a $ABI"
+          args="-a $VLCFIX_ABI"
           # 'if' et non '[ … ] && args=…' : sous set -e, un test faux en derniere position
           # ferait echouer l'etape (verifie : '[ false ] && x' laisse le shell sur 1).
-          if [ "$RELEASE_APK" = "true" ]; then args="$args --release"; fi
+          if [ "$VLCFIX_RELEASE_APK" = "true" ]; then args="$args --release"; fi
           echo "  commande : ./buildsystem/compile.sh $args"
           set +e
           ./buildsystem/compile.sh $args > "$GITHUB_WORKSPACE/build.log" 2>&1
