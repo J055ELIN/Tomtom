@@ -15,6 +15,19 @@
 name: vlc-android-sftp-debian13
 
 on:
+  # LA RAISON D'ETRE DE CE BLOC : `workflow_dispatch` n'est proposable par l'API (et par
+  # l'onglet Actions) que si le fichier existe AUSSI sur la branche par defaut. Ici le
+  # workflow ne vit que sur `vlc-sftp-build`, donc le POST /dispatches repond 404 (mesure :
+  # HTTP 404 au premier essai, alors que la branche etait poussee et le fichier present sur
+  # cette branche, sha 52f64490). Le bouton "Run workflow" n'apparaitra que si un jour tu
+  # fusionnes ce fichier sur `main` - volontairement pas fait, `main` sert latest.json.
+  # On declenche donc par poussée, avec un filtre pour ne relancer un build QUE si le build
+  # lui-meme change.
+  push:
+    branches: [vlc-sftp-build]
+    paths:
+      - '.github/workflows/vlc-android-sftp.yml'
+      - 'vlc-sftp/**'
   workflow_dispatch:
     inputs:
       abi:
@@ -34,6 +47,11 @@ on:
         description: "hote SFTP a auditer avant build (vide = sauter l'audit)"
         type: string
         default: ""
+
+concurrency:
+  # une poussee de plus pendant un run en cours = on annule l'ancien (il batit un commit mort)
+  group: vlc-sftp-build-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   ANDROID_SDK: ${{ github.workspace }}/android-sdk
