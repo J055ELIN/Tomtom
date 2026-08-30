@@ -1,0 +1,218 @@
+From 67b11acb272f606a22630b2f8e1ebf5ed23061ce Mon Sep 17 00:00:00 2001
+From: vlc-sftp <vlc-sftp@local>
+Date: Sun, 30 Aug 2026 08:41:13 +0000
+Subject: [PATCH] contrib: build libssh2 against Mbed TLS on Android (fixes
+ SFTP to Debian 13)
+
+For the vlc-android 3.7.1 base, whose contribs pin libssh2 1.10.0 built with
+Libgcrypt via autotools. Switching only the backend is not enough there:
+libssh2 1.10.0 defines no LIBSSH2_RSA_SHA2 at all, so take the newer package
+(CMake, libssh2 1.11.1) from the 3.0.x branch and flip its backend to Mbed TLS.
+
+Message-Id: <0003-vlc-sftp-debian13@arena.local>
+---
+ contrib/src/mbedtls/SHA512SUMS                |  1 +
+ contrib/src/mbedtls/rules.mak                 | 34 +++++++++++++++
+ .../src/ssh2/0001-fix-gcrypt-linking.patch    | 10 -----
+ contrib/src/ssh2/SHA512SUMS                   |  2 +-
+ contrib/src/ssh2/no-tests.patch               | 10 -----
+ contrib/src/ssh2/rules.mak                    | 41 +++++++++++--------
+ contrib/src/ssh2/winrt-no-agent.patch         | 31 --------------
+ 7 files changed, 60 insertions(+), 69 deletions(-)
+ create mode 100644 contrib/src/mbedtls/SHA512SUMS
+ create mode 100644 contrib/src/mbedtls/rules.mak
+ delete mode 100644 contrib/src/ssh2/0001-fix-gcrypt-linking.patch
+ delete mode 100644 contrib/src/ssh2/no-tests.patch
+ delete mode 100644 contrib/src/ssh2/winrt-no-agent.patch
+
+diff --git a/contrib/src/mbedtls/SHA512SUMS b/contrib/src/mbedtls/SHA512SUMS
+new file mode 100644
+index 0000000000..a5b5d1b8b2
+--- /dev/null
++++ b/contrib/src/mbedtls/SHA512SUMS
+@@ -0,0 +1 @@
++acc6d49cba57379f27185d6a381073132f3013c91bb21d14f57ca4f9f4b75cd27df6bf0bb598ffa347ebeb34d9d3a444ef230592813c5611c918f7714ed4a8df  mbedtls-3.6.5.tar.bz2
+diff --git a/contrib/src/mbedtls/rules.mak b/contrib/src/mbedtls/rules.mak
+new file mode 100644
+index 0000000000..4cedb6699f
+--- /dev/null
++++ b/contrib/src/mbedtls/rules.mak
+@@ -0,0 +1,34 @@
++# Mbed TLS
++
++MBEDTLS_VERSION := 3.6.5
++MBEDTLS_URL := $(GITHUB)/Mbed-TLS/mbedtls/releases/download/mbedtls-$(MBEDTLS_VERSION)/mbedtls-$(MBEDTLS_VERSION).tar.bz2
++
++# Same guard as contrib/src/ssh2: without BUILD_NETWORK, libssh2 is not built at
++# all, so its crypto backend should not be.
++ifdef BUILD_NETWORK
++PKGS += mbedtls
++endif
++ifeq ($(call need_pkg,"mbedcrypto"),)
++PKGS_FOUND += mbedtls
++endif
++
++$(TARBALLS)/mbedtls-$(MBEDTLS_VERSION).tar.bz2:
++	$(call download_pkg,$(MBEDTLS_URL),mbedtls)
++
++.sum-mbedtls: mbedtls-$(MBEDTLS_VERSION).tar.bz2
++
++mbedtls: mbedtls-$(MBEDTLS_VERSION).tar.bz2 .sum-mbedtls
++	$(UNPACK)
++	$(MOVE)
++
++# Static only: libssh2 is itself built as a static library in the contribs, and
++# the resulting plugins must not carry an extra runtime dependency.
++MBEDTLS_CONF := -DUSE_STATIC_MBEDTLS_LIBRARY=ON -DUSE_SHARED_MBEDTLS_LIBRARY=OFF \
++	-DENABLE_TESTING=OFF -DENABLE_PROGRAMS=OFF -DGEN_FILES=OFF
++
++.mbedtls: mbedtls toolchain.cmake
++	$(CMAKECLEAN)
++	$(HOSTVARS_CMAKE) $(CMAKE) $(MBEDTLS_CONF)
++	+$(CMAKEBUILD)
++	$(CMAKEINSTALL)
++	touch $@
+diff --git a/contrib/src/ssh2/0001-fix-gcrypt-linking.patch b/contrib/src/ssh2/0001-fix-gcrypt-linking.patch
+deleted file mode 100644
+index 05832c1003..0000000000
+--- a/contrib/src/ssh2/0001-fix-gcrypt-linking.patch
++++ /dev/null
+@@ -1,10 +0,0 @@
+---- ssh2/acinclude.m4.orig	2022-05-08 22:01:39.704273920 +0200
+-+++ ssh2/acinclude.m4	2022-05-27 15:24:17.697253672 +0200
+-@@ -434,6 +434,7 @@
+- [libgcrypt], [
+-   LIBSSH2_LIB_HAVE_LINKFLAGS([gcrypt], [], [#include <gcrypt.h>], [
+-     AC_DEFINE(LIBSSH2_LIBGCRYPT, 1, [Use $1])
+-+    LIBS="$LIBS -lgcrypt -lgpg-error"
+-     found_crypto="$1"
+-   ])
+- ],
+diff --git a/contrib/src/ssh2/SHA512SUMS b/contrib/src/ssh2/SHA512SUMS
+index dc742ebaf7..c97bf4a56a 100644
+--- a/contrib/src/ssh2/SHA512SUMS
++++ b/contrib/src/ssh2/SHA512SUMS
+@@ -1 +1 @@
+-e064ee1089eb8e6cd5fa2617f4fd8ff56c2721c5476775a98bdb68c6c4ee4d05c706c3bb0eb479a27a8ec0b17a8a5ef43e1d028ad3f134519aa582d3981a3a30  libssh2-1.10.0.tar.gz
++8322b54a522b0cbbb07916d29ec045c08f8ed94bd8abb5e524038640e90a317667a25be46d95b62b101ed726ade0a51a90fb246cf34c045c38f927f4e439e431  libssh2-1.11.1.tar.xz
+diff --git a/contrib/src/ssh2/no-tests.patch b/contrib/src/ssh2/no-tests.patch
+deleted file mode 100644
+index 3e4b3960e8..0000000000
+--- a/contrib/src/ssh2/no-tests.patch
++++ /dev/null
+@@ -1,10 +0,0 @@
+---- libssh2-1.4.3/Makefile.am.orig	2014-01-24 18:42:51.602763926 +0100
+-+++ libssh2-1.4.3/Makefile.am	2014-01-24 18:42:58.522873002 +0100
+-@@ -1,6 +1,6 @@
+- AUTOMAKE_OPTIONS = foreign nostdinc
+- 
+--SUBDIRS = src tests docs
+-+SUBDIRS = src docs
+- if BUILD_EXAMPLES
+- SUBDIRS += example
+- endif
+diff --git a/contrib/src/ssh2/rules.mak b/contrib/src/ssh2/rules.mak
+index 81633d48d8..10fceb4330 100644
+--- a/contrib/src/ssh2/rules.mak
++++ b/contrib/src/ssh2/rules.mak
+@@ -1,7 +1,7 @@
+ # ssh2
+ 
+-LIBSSH2_VERSION := 1.10.0
+-LIBSSH2_URL := http://www.libssh2.org/download/libssh2-$(LIBSSH2_VERSION).tar.gz
++LIBSSH2_VERSION := 1.11.1
++LIBSSH2_URL := http://www.libssh2.org/download/libssh2-$(LIBSSH2_VERSION).tar.xz
+ 
+ ifdef BUILD_NETWORK
+ PKGS += ssh2
+@@ -14,28 +14,35 @@ ifeq ($(shell echo `${CC} -dumpversion | cut -f1-2 -d.`),4.9)
+ 	BROKEN_GCC_CFLAGS:="CFLAGS=-O1"
+ endif
+ 
+-$(TARBALLS)/libssh2-$(LIBSSH2_VERSION).tar.gz:
++$(TARBALLS)/libssh2-$(LIBSSH2_VERSION).tar.xz:
+ 	$(call download_pkg,$(LIBSSH2_URL),ssh2)
+ 
+-.sum-ssh2: libssh2-$(LIBSSH2_VERSION).tar.gz
++.sum-ssh2: libssh2-$(LIBSSH2_VERSION).tar.xz
+ 
+-ssh2: libssh2-$(LIBSSH2_VERSION).tar.gz .sum-ssh2
++ssh2: libssh2-$(LIBSSH2_VERSION).tar.xz .sum-ssh2
+ 	$(UNPACK)
+-	$(UPDATE_AUTOCONFIG)
+-	$(APPLY) $(SRC)/ssh2/no-tests.patch
+-	$(APPLY) $(SRC)/ssh2/0001-fix-gcrypt-linking.patch
+-	$(call pkg_static,"libssh2.pc.in")
+-ifdef HAVE_WINSTORE
+-	$(APPLY) $(SRC)/ssh2/winrt-no-agent.patch
+-endif
+ 	$(MOVE)
+ 
++ifdef HAVE_ANDROID
++DEPS_ssh2 = mbedtls $(DEPS_mbedtls)
++else
+ DEPS_ssh2 = gcrypt $(DEPS_gcrypt)
++endif
++ifdef HAVE_WINSTORE
++# uses SecureZeroMemory
++DEPS_ssh2 += alloweduwp $(DEPS_alloweduwp)
++endif
++
++SSH2_CONF := -DBUILD_EXAMPLES=OFF -DLIBSSH2_BUILD_DOCS=OFF -DCRYPTO_BACKEND:STRING=mbedTLS $(BROKEN_GCC_CFLAGS)
+ 
+-SSH2_CONF := --disable-examples-build --with-libgcrypt --without-openssl --without-mbedtls
++ifdef HAVE_ANDROID
++SSH2_CONF += -DMBEDTLS_INCLUDE_DIR=$(PREFIX)/include \
++		   -DMBEDCRYPTO_LIBRARY=$(PREFIX)/lib/libmbedcrypto.a
++endif
+ 
+-.ssh2: ssh2
+-	$(RECONF)
+-	cd $< && $(HOSTVARS) ./configure $(BROKEN_GCC_CFLAGS) $(HOSTCONF) $(SSH2_CONF)
+-	$(MAKE) -C $< install
++.ssh2: ssh2 toolchain.cmake
++	$(CMAKECLEAN)
++	$(HOSTVARS_CMAKE) $(CMAKE) $(SSH2_CONF)
++	+$(CMAKEBUILD)
++	$(CMAKEINSTALL)
+ 	touch $@
+diff --git a/contrib/src/ssh2/winrt-no-agent.patch b/contrib/src/ssh2/winrt-no-agent.patch
+deleted file mode 100644
+index 419978ecb3..0000000000
+--- a/contrib/src/ssh2/winrt-no-agent.patch
++++ /dev/null
+@@ -1,31 +0,0 @@
+---- ssh2/src/agent.c.orig	2016-05-09 17:39:46.474593275 +0200
+-+++ ssh2/src/agent.c	2016-05-09 17:40:03.058578212 +0200
+-@@ -251,7 +251,7 @@
+- };
+- #endif  /* PF_UNIX */
+- 
+--#ifdef WIN32
+-+#if defined(WIN32) && WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+- /* Code to talk to Pageant was taken from PuTTY.
+-  *
+-  * Portions copyright Robert de Bath, Joris van Rantwijk, Delian
+-@@ -353,7 +353,7 @@
+-     const char *name;
+-     struct agent_ops *ops;
+- } supported_backends[] = {
+--#ifdef WIN32
+-+#if defined(WIN32) && WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+-     {"Pageant", &agent_ops_pageant},
+- #endif  /* WIN32 */
+- #ifdef PF_UNIX
+---- ssh2/src/agent_win.c.orig	2022-05-27 20:17:14.311901449 +0200
+-+++ ssh2/src/agent_win.c	2022-05-27 20:16:25.851861610 +0200
+-@@ -55,7 +55,7 @@
+- #include <stdlib.h>
+- #endif
+- 
+--#ifdef WIN32
+-+#if defined(WIN32) && WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+- /* Code to talk to OpenSSH was taken and modified from the Win32 port of
+-  * Portable OpenSSH by the PowerShell team. Commit
+-  * 8ab565c53f3619d6a1f5ac229e212cad8a52852c of
+-- 
+never
+

@@ -191,14 +191,17 @@ jobs:
           set -euo pipefail
           cd "$VLC_ANDROID"
           ./buildsystem/compile.sh --init -a "$ABI" > "$GITHUB_WORKSPACE/init.log" 2>&1 || true
-          # Mecanisme OFFICIEL de patch du core (libvlcjni@libvlcjni-3.x, buildsystem/get-vlc.sh) :
-          #   l.46-48 : VLC_TESTED_HASH=ac6c2a405d..., VLC_BRANCH=3.0.x
-          #   l.91-97 : git clone vlc -b 3.0.x ; git reset --hard $VLC_TESTED_HASH
-          #             puis 'git am --message-id $PATCHES_DIR/*.patch' avec
-          #             PATCHES_DIR=libvlcjni/libvlc/patches  (l.5)
-          # Donc : poser le patch dans PATCHES_DIR le fait survivre au reset, et get-vlc.sh EN VERIFIE
-          # la presence (grep du Message-Id dans git log) quand on ne lui passe pas '-b'. C'est plus sur
-          # que mon ancien 'git apply' + '-b' : le '-b' court-circuitait justement cette verification.
+          # Mecanisme OFFICIEL de patch du core (libvlcjni/buildsystem/get-vlc.sh) :
+          #   PATCHES_DIR = libvlcjni/libvlc/patches (l.5) ; apres clone + 'git reset --hard
+          #   $VLC_TESTED_HASH' vient 'git am --message-id $PATCHES_DIR/*.patch' (l.96-99), et
+          #   check_patch_is_applied() verifie le Message-Id dans git log quand on ne passe pas '-b'.
+          #   Le hash epingle depend de la REVISION de libvlcjni utilisee, pas du bout de sa branche :
+          #   vlc-android@3.7.1 fait 'git reset --hard 7cd0c151da' (compile.sh l.286+304) et LE
+          #   get-vlc.sh de cette revision epingle VLC 3.0.x @ 3458be162f (contribs en libssh2 1.10.0,
+          #   regle autotools), alors que le bout de libvlcjni-3.x en epingle un plus recent (ac6c2a405d,
+          #   1.11.1, CMake). D'ou trois patchs jumeaux, choisis par ce qui s'applique vraiment.
+          #   1.10.0 ne connait pas LIBSSH2_RSA_SHA2 : changer seul le backend ne suffirait pas, le
+          #   patch 0003 ramene donc le paquet ssh2 de 1.11.1 (CMake) en plus de la bascule mbedTLS.
           VLC_SRC="$(find . -maxdepth 6 -type d -name contrib -path '*/vlc/*' | head -1 | xargs -r dirname)"
           [ -n "$VLC_SRC" ] || { echo "AUCUN arbre vlc trouve ; fins de init.log :"; tail -20 "$GITHUB_WORKSPACE/init.log"; exit 1; }
           cd "$VLC_SRC"
@@ -207,19 +210,20 @@ jobs:
           echo "vlc source tree: $VLC_SRC @ $(git rev-parse --short HEAD)"
           PDIR="$(cd .. && pwd)/libvlc/patches"
           mkdir -p "$PDIR"
-          # deux patchs jumeaux, exactement un doit s'appliquer (mesure sur ac6c2a405d : 0001 refuse, 0002 passe)
+          # trois patchs jumeaux (0001=master, 0002=3.0.x@ac6c2a405d, 0003=3.0.x@3458be162f) :
+          # exactement UN doit s'appliquer ; matrice mesuree localement : 3458->0003 seul, ac6c->0002 seul
           FITS=""
-          for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[12]-*.patch; do
+          for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[123]-*.patch; do
             git apply --check "$p" 2>/dev/null && FITS="$FITS $p"
           done
           if [ -z "$FITS" ]; then
-            for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[12]-*.patch; do
+            for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[123]-*.patch; do
               patch -p1 --forward --dry-run < "$p" > /tmp/p.log 2>&1 && FITS="$FITS $p"
             done
             case "$(echo $FITS | wc -w)" in
               1) echo "  'git apply' refusait, 'patch' accepte : $(basename "${FITS## }")" ;;
-              0) echo "  AUCUN des deux patchs ne s'applique sur $(git rev-parse --short HEAD)" ; exit 1 ;;
-              *) echo "  AMBIGUITE : les deux patchs passeraient aussi via 'patch'" ; exit 1 ;;
+              0) echo "  AUCUN des patchs proposes ne s'applique sur $(git rev-parse --short HEAD)" ; exit 1 ;;
+              *) echo "  AMBIGUITE : plusieurs patchs passeraient aussi via 'patch'" ; exit 1 ;;
             esac
           fi
           [ "$(echo $FITS | wc -w)" = 1 ] || { echo "  AMBIGUITE : $(echo $FITS | wc -w) patchs applicables"; exit 1; }
