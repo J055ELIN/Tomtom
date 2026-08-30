@@ -186,22 +186,33 @@ jobs:
             https://code.videolan.org/videolan/vlc-android.git _va
           echo "VLC_ANDROID=$GITHUB_WORKSPACE/_va" >> "$GITHUB_ENV"
 
-      - name: "Preparation (--init) puis application du correctif (mecanisme get-vlc.sh)"
+      - name: "Preparation (--init), patchs officiels puis correctif (mecanisme get-vlc.sh)"
         run: |
           set -euo pipefail
           cd "$VLC_ANDROID"
-          ./buildsystem/compile.sh --init -a "$ABI" > "$GITHUB_WORKSPACE/init.log" 2>&1 || true
+          # Identite GLOBALE avant tout : get-vlc.sh fait lui-meme 'git am --message-id' (l.99) pour ses
+          # patchs officiels, et 'git am' refuse sans identite ('empty ident name', exit 128). Sans cela,
+          # l''--init' laissait l'arbre VIDE du patch officiel sendmsg, et l'etape de build echouait ensuite
+          # sur 'Cannot find patch 0001-compat-Workaround-sendmsg-bug-on-android.patch in git log' (vu au run #4).
+          git config --global user.email "vlc-sftp@ci.local"
+          git config --global user.name  "vlc-sftp CI"
+          git config --global --add safe.directory '*' || true
+          set +e                      # on tolere un --init en echec : l'arbre est reparable juste apres,
+          ./buildsystem/compile.sh --init -a "$ABI" > "$GITHUB_WORKSPACE/init.log" 2>&1   # mais on l'affiche
+          rc=$?
+          set -e
+          echo "  compile.sh --init : exit=$rc ; fin du journal :"
+          tail -8 "$GITHUB_WORKSPACE/init.log" | sed 's/^/    /'
+          [ $rc -eq 0 ] || { echo "  --init a echoue, on tente quand meme de reparer l'arbre"; }
           # Mecanisme OFFICIEL de patch du core (libvlcjni/buildsystem/get-vlc.sh) :
-          #   PATCHES_DIR = libvlcjni/libvlc/patches (l.5) ; apres clone + 'git reset --hard
-          #   $VLC_TESTED_HASH' vient 'git am --message-id $PATCHES_DIR/*.patch' (l.96-99), et
-          #   check_patch_is_applied() verifie le Message-Id dans git log quand on ne passe pas '-b'.
+          #   PATCHES_DIR = libvlcjni/libvlc/patches (l.5) ; clone puis 'git reset --hard $VLC_TESTED_HASH'
+          #   puis 'git am --message-id $PATCHES_DIR/*.patch' (l.96-99) ; et check_patch_is_applied() (l.25-43)
+          #   exige le Message-Id de CHAQUE patch present dans PATCHES_DIR quand on ne passe pas '-b' (l.120-121).
           #   Le hash epingle depend de la REVISION de libvlcjni utilisee, pas du bout de sa branche :
-          #   vlc-android@3.7.1 fait 'git reset --hard 7cd0c151da' (compile.sh l.286+304) et LE
-          #   get-vlc.sh de cette revision epingle VLC 3.0.x @ 3458be162f (contribs en libssh2 1.10.0,
-          #   regle autotools), alors que le bout de libvlcjni-3.x en epingle un plus recent (ac6c2a405d,
-          #   1.11.1, CMake). D'ou trois patchs jumeaux, choisis par ce qui s'applique vraiment.
-          #   1.10.0 ne connait pas LIBSSH2_RSA_SHA2 : changer seul le backend ne suffirait pas, le
-          #   patch 0003 ramene donc le paquet ssh2 de 1.11.1 (CMake) en plus de la bascule mbedTLS.
+          #   vlc-android@3.7.1 fait 'git reset --hard 7cd0c151da' (compile.sh l.286+304) et LE get-vlc.sh de
+          #   cette revision epingle VLC 3.0.x @ 3458be162f (contribs en libssh2 1.10.0, regle autotools).
+          #   1.10.0 ne connait pas LIBSSH2_RSA_SHA2 : changer seul le backend ne suffirait pas, d'ou le
+          #   patch 0003 qui ramene aussi le paquet ssh2 de 1.11.1 (CMake).
           VLC_SRC="$(find . -maxdepth 6 -type d -name contrib -path '*/vlc/*' | head -1 | xargs -r dirname)"
           [ -n "$VLC_SRC" ] || { echo "AUCUN arbre vlc trouve ; fins de init.log :"; tail -20 "$GITHUB_WORKSPACE/init.log"; exit 1; }
           cd "$VLC_SRC"
@@ -210,8 +221,26 @@ jobs:
           echo "vlc source tree: $VLC_SRC @ $(git rev-parse --short HEAD)"
           PDIR="$(cd .. && pwd)/libvlc/patches"
           mkdir -p "$PDIR"
-          # trois patchs jumeaux (0001=master, 0002=3.0.x@ac6c2a405d, 0003=3.0.x@3458be162f) :
-          # exactement UN doit s'appliquer ; matrice mesuree localement : 3458->0003 seul, ac6c->0002 seul
+          # 1) s'assurer que TOUS les patchs officiels deja presents dans PATCHES_DIR sont dans le log
+          #    (get-vlc.sh ne les applique que sur un clone neuf ; un 'git am' qui a echoue pendant --init
+          #    laisse un arbre qui passera l'am mais pas la verification de l'etape suivante).
+          applied_officiels=0
+          for up in "$PDIR"/*.patch; do
+            [ -f "$up" ] || continue
+            umid=$(sed -n 's/^Message-Id: //p' "$up" | head -1)
+            [ -n "$umid" ] || { echo "  patch officiel sans Message-Id : $(basename "$up") (ignore)"; continue; }
+            if [ -z "$(git log --grep="$umid" --oneline)" ]; then
+              echo "  patch officiel absent du log, on l'applique : $(basename "$up")"
+              git am --message-id "$up" > "$GITHUB_WORKSPACE/am-up.log" 2>&1 || {
+                echo "  echec de l'am du patch officiel :"; tail -4 "$GITHUB_WORKSPACE/am-up.log"; exit 1; }
+              [ -n "$(git log --grep="$umid" --oneline)" ] || { echo "  toujours pas dans le log"; exit 1; }
+              applied_officiels=$((applied_officiels+1))
+            else
+              echo "  patch officiel deja en place : $(basename "$up")"
+            fi
+          done
+          # 2) choisir MON patch parmi les trois jumeaux (0001=master, 0002=3.0.x@ac6c2a405d,
+          #    0003=3.0.x@3458be162f) : exactement UN doit s'appliquer, sinon on s'arrete la.
           FITS=""
           for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[123]-*.patch; do
             git apply --check "$p" 2>/dev/null && FITS="$FITS $p"
@@ -230,16 +259,15 @@ jobs:
           CHOSEN="${FITS## }"; BASE="$(basename "$CHOSEN")"
           cp "$CHOSEN" "$PDIR/$BASE"
           grep -q '^Message-Id:' "$PDIR/$BASE" || { echo "  patch sans Message-Id : check_patch_is_applied echouerait"; exit 1; }
-          git checkout -q -- . 2>/dev/null || true
           git am --message-id "$PDIR/$BASE" > "$GITHUB_WORKSPACE/am.log" 2>&1
           rc=$?
           [ $rc -eq 0 ] || { echo "  'git am' a echoue (exit $rc) :"; tail -6 "$GITHUB_WORKSPACE/am.log"; exit 1; }
           MID=$(sed -n 's/^Message-Id: //p' "$PDIR/$BASE" | head -1)
-          git log --grep="$MID" --oneline | head -1 | sed 's/^/  verif get-vlc.sh: /'
           [ -n "$(git log --grep="$MID" --oneline)" ] || { echo "  Message-Id absent du log: $MID"; exit 1; }
           grep -q 'CRYPTO_BACKEND:STRING=mbedTLS' contrib/src/ssh2/rules.mak || { echo "  flag mbedTLS absent de rules.mak"; exit 1; }
           test -f contrib/src/mbedtls/SHA512SUMS && test -f contrib/src/mbedtls/rules.mak || { echo "  paquet mbedtls incomplet"; exit 1; }
-          echo "  correctif $BASE : commit + copie dans $PDIR (survit a un reset) + Message-Id verifie"
+          echo "  arbre patche : $(basename "$BASE") + $applied_officiels patch(s) officiel(s) remis a plat"
+          git log --oneline -3 | sed 's/^/    /'
 
       - name: "Build des contribs + LibVLC + app (sans -b : les checks de get-vlc.sh restent actifs)"
         run: |
