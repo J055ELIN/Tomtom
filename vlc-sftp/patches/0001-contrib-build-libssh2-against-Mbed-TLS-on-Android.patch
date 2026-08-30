@@ -2,6 +2,7 @@ From a60c128c13070597c8a9f97eadf46f726d5377dd Mon Sep 17 00:00:00 2001
 From: VLC SFTP Debian-13 fix <patch@local>
 Date: Sat, 29 Aug 2026 19:49:33 +0000
 Subject: [PATCH] contrib: build libssh2 against Mbed TLS on Android
+Message-Id: <a23552f0132b51bbd5d4.vlc-sftp-debian13@arena.local>
 
 The Android (and every non-Windows) contrib build compiles libssh2 with the
 Libgcrypt crypto backend.  That backend only implements:

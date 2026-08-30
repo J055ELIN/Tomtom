@@ -66,6 +66,15 @@ env:
   SDK_BUILD_TOOLS: "36.0.0"
   SDK_PLATFORM: "android-36"
   NDK_VERSION: "28.2.13676358"
+  # Les inputs sont VIDES quand le run n'est pas declenche par workflow_dispatch. Mesure au
+  # run #2 : 'git clone --branch ""' -> "fatal: Remote branch  not found in upstream origin",
+  # etape 7 morte en 10 s. Comme on se declenche par poussee, ce sont ICI les vraies valeurs
+  # par defaut ; un dispatch ne fait que les surcharger. ('&&/||' rend 'false' aussi bien pour
+  # faux que pour absent : voulu pour RELEASE_APK.)
+  ABI: ${{ inputs.abi || 'arm64' }}
+  VLC_ANDROID_REF: ${{ inputs.vlc_android_ref || '3.7.1' }}
+  RELEASE_APK: ${{ inputs.release_apk && 'true' || 'false' }}
+  PROBE_SERVER: ${{ inputs.probe_server }}
 
 jobs:
   audit-serveur:
@@ -78,7 +87,7 @@ jobs:
         run: |
           set -uo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq nmap > /dev/null
-          H="${{ inputs.probe_server }}"
+          H="${PROBE_SERVER:-${{ inputs.probe_server }}}"
           echo "  audit de $H (22) - cote serveur uniquement"
           nmap -Pn -sV --version-light --script ssh2-enum-algos -p22 "$H" 2>/dev/null \
             | sed -n '/kex_algorithms/,/ssh_host_key/p' | head -40 | sed 's/^/    /'
@@ -172,64 +181,79 @@ jobs:
       - name: "Sources vlc-android (+ sous-modules libvlc / vlc)"
         run: |
           set -euo pipefail
-          git clone --recursive --depth 1 --branch "${{ inputs.vlc_android_ref }}" \
+          echo "  ref demandee : $VLC_ANDROID_REF | abi : $ABI | release : $RELEASE_APK"
+          git clone --recursive --depth 1 --branch "$VLC_ANDROID_REF" \
             https://code.videolan.org/videolan/vlc-android.git _va
           echo "VLC_ANDROID=$GITHUB_WORKSPACE/_va" >> "$GITHUB_ENV"
 
-      - name: "Preparation (--init) puis application du correctif"
+      - name: "Preparation (--init) puis application du correctif (mecanisme get-vlc.sh)"
         run: |
           set -euo pipefail
           cd "$VLC_ANDROID"
-          ./buildsystem/compile.sh --init -a "${{ inputs.abi }}" > "$GITHUB_WORKSPACE/init.log" 2>&1 || true
+          ./buildsystem/compile.sh --init -a "$ABI" > "$GITHUB_WORKSPACE/init.log" 2>&1 || true
+          # Mecanisme OFFICIEL de patch du core (libvlcjni@libvlcjni-3.x, buildsystem/get-vlc.sh) :
+          #   l.46-48 : VLC_TESTED_HASH=ac6c2a405d..., VLC_BRANCH=3.0.x
+          #   l.91-97 : git clone vlc -b 3.0.x ; git reset --hard $VLC_TESTED_HASH
+          #             puis 'git am --message-id $PATCHES_DIR/*.patch' avec
+          #             PATCHES_DIR=libvlcjni/libvlc/patches  (l.5)
+          # Donc : poser le patch dans PATCHES_DIR le fait survivre au reset, et get-vlc.sh EN VERIFIE
+          # la presence (grep du Message-Id dans git log) quand on ne lui passe pas '-b'. C'est plus sur
+          # que mon ancien 'git apply' + '-b' : le '-b' court-circuitait justement cette verification.
           VLC_SRC="$(find . -maxdepth 6 -type d -name contrib -path '*/vlc/*' | head -1 | xargs -r dirname)"
           [ -n "$VLC_SRC" ] || { echo "AUCUN arbre vlc trouve ; fins de init.log :"; tail -20 "$GITHUB_WORKSPACE/init.log"; exit 1; }
-          echo "vlc source tree: $VLC_SRC ($(git -C "$VLC_SRC" rev-parse --short HEAD))"
           cd "$VLC_SRC"
-          # deux patchs jumeaux : 0001 pour vlc master/4.x, 0002 pour vlc 3.0.x
-          # (c'est la branche que libvlcjni-3.x va chercher pour un APK 3.7.x). Les deux
-          # ne s'appliquent pas au meme endroit : 'DEPS_ssh2 = gcrypt' en 3.0.x contre
-          # 'ifndef HAVE_WIN32 / DEPS_ssh2 += gcrypt' en master. On choisit a l'essai.
+          git config user.email "vlc-sftp@ci.local"
+          git config user.name  "vlc-sftp CI"
+          echo "vlc source tree: $VLC_SRC @ $(git rev-parse --short HEAD)"
+          PDIR="$(cd .. && pwd)/libvlc/patches"
+          mkdir -p "$PDIR"
+          # deux patchs jumeaux, exactement un doit s'appliquer (mesure sur ac6c2a405d : 0001 refuse, 0002 passe)
           FITS=""
           for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[12]-*.patch; do
             git apply --check "$p" 2>/dev/null && FITS="$FITS $p"
           done
-          case "$(echo $FITS | wc -w)" in
-            1) APPLIED="${FITS## }"; git apply "$APPLIED" ;;
-            0) APPLIED="" ;;
-            *) echo "AMBIGUITE: les deux patchs s'appliquent sur cet arbre ($(git rev-parse --short HEAD)) :"; echo "$FITS" | tr ' ' '\n' | sed '/^$/d;s/^/     /'; exit 1 ;;
-          esac
-          if [ -z "$APPLIED" ]; then
-            FITS=""
+          if [ -z "$FITS" ]; then
             for p in "$GITHUB_WORKSPACE"/vlc-sftp/patches/000[12]-*.patch; do
               patch -p1 --forward --dry-run < "$p" > /tmp/p.log 2>&1 && FITS="$FITS $p"
             done
             case "$(echo $FITS | wc -w)" in
-              1) APPLIED="${FITS## }"; patch -p1 --forward < "$APPLIED" ;;
-              0) ;;
-              *) echo "AMBIGUITE: les deux patchs s'appliquent via 'patch' aussi"; exit 1 ;;
+              1) echo "  'git apply' refusait, 'patch' accepte : $(basename "${FITS## }")" ;;
+              0) echo "  AUCUN des deux patchs ne s'applique sur $(git rev-parse --short HEAD)" ; exit 1 ;;
+              *) echo "  AMBIGUITE : les deux patchs passeraient aussi via 'patch'" ; exit 1 ;;
             esac
           fi
-          [ -n "$APPLIED" ] || { echo "AUCUN patch ne s'applique sur cet arbre vlc ($(git rev-parse --short HEAD))"; exit 1; }
-          echo "  patch retenu : $(basename "$APPLIED")  (exactement une des deux candidates s'applique ; les cas '0' et '2' sortent en erreur)"
-          git status --porcelain | sed 's/^/  /'
-          # garde-fou immediat : sans ces 3 fichiers, le build suivant ne corrigerait rien
-          for f in contrib/src/mbedtls/rules.mak contrib/src/mbedtls/SHA512SUMS contrib/src/ssh2/rules.mak; do
-            [ -f "$f" ] || { echo "MANQUANT apres patch: $f"; exit 1; }
-          done
-          grep -q 'CRYPTO_BACKEND:STRING=mbedTLS' contrib/src/ssh2/rules.mak || { echo "le flag mbedTLS n'est pas dans rules.mak"; exit 1; }
-          grep -q 'DEPS_ssh2 = mbedtls\|DEPS_ssh2 += mbedtls' contrib/src/ssh2/rules.mak || { echo "DEPS_ssh2 n' pointe pas mbedtls"; exit 1; }
-          echo "  correctif en place dans $(git rev-parse --short HEAD)"
+          [ "$(echo $FITS | wc -w)" = 1 ] || { echo "  AMBIGUITE : $(echo $FITS | wc -w) patchs applicables"; exit 1; }
+          CHOSEN="${FITS## }"; BASE="$(basename "$CHOSEN")"
+          cp "$CHOSEN" "$PDIR/$BASE"
+          grep -q '^Message-Id:' "$PDIR/$BASE" || { echo "  patch sans Message-Id : check_patch_is_applied echouerait"; exit 1; }
+          git checkout -q -- . 2>/dev/null || true
+          git am --message-id "$PDIR/$BASE" > "$GITHUB_WORKSPACE/am.log" 2>&1
+          rc=$?
+          [ $rc -eq 0 ] || { echo "  'git am' a echoue (exit $rc) :"; tail -6 "$GITHUB_WORKSPACE/am.log"; exit 1; }
+          MID=$(sed -n 's/^Message-Id: //p' "$PDIR/$BASE" | head -1)
+          git log --grep="$MID" --oneline | head -1 | sed 's/^/  verif get-vlc.sh: /'
+          [ -n "$(git log --grep="$MID" --oneline)" ] || { echo "  Message-Id absent du log: $MID"; exit 1; }
+          grep -q 'CRYPTO_BACKEND:STRING=mbedTLS' contrib/src/ssh2/rules.mak || { echo "  flag mbedTLS absent de rules.mak"; exit 1; }
+          test -f contrib/src/mbedtls/SHA512SUMS && test -f contrib/src/mbedtls/rules.mak || { echo "  paquet mbedtls incomplet"; exit 1; }
+          echo "  correctif $BASE : commit + copie dans $PDIR (survit a un reset) + Message-Id verifie"
 
-      - name: "Build des contribs + LibVLC + app (-b : pas de reset des sources patchees)"
+      - name: "Build des contribs + LibVLC + app (sans -b : les checks de get-vlc.sh restent actifs)"
         run: |
           set -euo pipefail
           cd "$VLC_ANDROID"
-          args="-a ${{ inputs.abi }} -b"
-          [ "${{ inputs.release_apk }}" = "true" ] && args="$args --release"
+          args="-a $ABI"
+          # 'if' et non '[ … ] && args=…' : sous set -e, un test faux en derniere position
+          # ferait echouer l'etape (verifie : '[ false ] && x' laisse le shell sur 1).
+          if [ "$RELEASE_APK" = "true" ]; then args="$args --release"; fi
+          echo "  commande : ./buildsystem/compile.sh $args"
+          set +e
           ./buildsystem/compile.sh $args > "$GITHUB_WORKSPACE/build.log" 2>&1
           rc=$?
-          tail -25 "$GITHUB_WORKSPACE/build.log"
-          grep -c 'contrib' "$GITHUB_WORKSPACE/build.log" > /dev/null && echo "  build terminee (code $rc)"
+          set -e
+          echo "----- 30 dernieres lignes du build -----"
+          tail -30 "$GITHUB_WORKSPACE/build.log" | sed 's/^/  /'
+          [ $rc -eq 0 ] || { echo "::error::compile.sh a echoue (code $rc) ; 60 lignes autour de la 1ere erreur :"; grep -n -m1 -E 'error:|Error [0-9]|\*\*\* ' "$GITHUB_WORKSPACE/build.log" | head -1 | cut -d: -f1 | while read -r n; do [ -n "$n" ] && sed -n "$((n>25?n-25:1)),$((n+25))p" "$GITHUB_WORKSPACE/build.log" | cut -c1-200 | sed 's/^/    /'; done; exit 1; }
+          echo "  => compile.sh termine (code 0) ; $(( $(wc -l < "$GITHUB_WORKSPACE/build.log") )) lignes de journal"
 
       - name: "Portique : le binaire contient-il les algorithmes de Debian 13"
         run: |

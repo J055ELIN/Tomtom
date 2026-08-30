@@ -2,6 +2,7 @@ From 8d38910767c2f5ad28000149b3df1ea9b695cfce Mon Sep 17 00:00:00 2001
 From: vlc-sftp <patch@local>
 Date: Sat, 29 Aug 2026 21:40:06 +0000
 Subject: [PATCH] contrib: build libssh2 against Mbed TLS on Android (vlc
+Message-Id: <3f9298f35dc9cdc7de87.vlc-sftp-debian13@arena.local>
  3.0.x)
 
 Same change as the master branch patch, adapted to the 3.0.x layout of
