@@ -1,4 +1,4 @@
-From 67b11acb272f606a22630b2f8e1ebf5ed23061ce Mon Sep 17 00:00:00 2001
+From d0a34a4d80cc281c0007ab7728fd46f4879e4578 Mon Sep 17 00:00:00 2001
 From: vlc-sftp <vlc-sftp@local>
 Date: Sun, 30 Aug 2026 08:41:13 +0000
 Subject: [PATCH] contrib: build libssh2 against Mbed TLS on Android (fixes
@@ -112,7 +112,7 @@ index 3e4b3960e8..0000000000
 - SUBDIRS += example
 - endif
 diff --git a/contrib/src/ssh2/rules.mak b/contrib/src/ssh2/rules.mak
-index 81633d48d8..10fceb4330 100644
+index 81633d48d8..8497e0dd42 100644
 --- a/contrib/src/ssh2/rules.mak
 +++ b/contrib/src/ssh2/rules.mak
 @@ -1,7 +1,7 @@
@@ -149,7 +149,7 @@ index 81633d48d8..10fceb4330 100644
  	$(MOVE)
  
 +ifdef HAVE_ANDROID
-+DEPS_ssh2 = mbedtls $(DEPS_mbedtls)
++DEPS_ssh2 = mbedtls $(DEPS_mbedtls) gcrypt $(DEPS_gcrypt)
 +else
  DEPS_ssh2 = gcrypt $(DEPS_gcrypt)
 +endif

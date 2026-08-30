@@ -300,6 +300,61 @@ jobs:
           [ $rc -eq 0 ] || { echo "::error::compile.sh a echoue (code $rc) ; 60 lignes autour de la 1ere erreur :"; grep -n -m1 -E 'error:|Error [0-9]|\*\*\* ' "$GITHUB_WORKSPACE/build.log" | head -1 | cut -d: -f1 | while read -r n; do [ -n "$n" ] && sed -n "$((n>25?n-25:1)),$((n+25))p" "$GITHUB_WORKSPACE/build.log" | cut -c1-200 | sed 's/^/    /'; done; exit 1; }
           echo "  => compile.sh termine (code 0) ; $(( $(wc -l < "$GITHUB_WORKSPACE/build.log") )) lignes de journal"
 
+      - name: "Sondes de liens : ce qui a ete construit, ce que pkg-config declare, ce que le configure a decide"
+        if: always()
+        run: |
+          set -uo pipefail
+          cd "$GITHUB_WORKSPACE"
+          # Etape de sondes, jouee TOUJOURS (if: always). Elle existe parce que le run #8 a echoue a
+          # l'edition de liens de libvlc.so avec "undefined symbol: gpgrt_fclose" et que le tail de
+          # 30 lignes ne permettait pas de trancher entre deux mecanismes : (a) libgpg-error jamais
+          # construit, (b) construit mais absent de la ligne de liens. Ces trois sondes separent les deux.
+          VJ="$VLC_ANDROID/libvlcjni"
+          PREFIX="$(find "$VJ/vlc/contrib" -maxdepth 1 -type d -name '*-android-*' 2>/dev/null | head -1)"
+          echo "== 1. ce qui existe reellement dans le prefix des contribs (${PREFIX:-introuvable}) =="
+          if [ -n "${PREFIX:-}" ]; then
+            for l in libssh2 libgcrypt libgpg-error libmbedcrypto libmbedtls libmbedx509; do
+              if [ -f "$PREFIX/lib/$l.a" ]; then
+                printf "   %-16s PRESENT  %s o\n" "$l.a" "$(stat -c%s "$PREFIX/lib/$l.a")"
+              else
+                printf "   %-16s absent\n" "$l.a"
+              fi
+            done
+            echo "== 2. ce que libssh2 declare a pkg-config (le Libs.private qui decide la ligne de liens) =="
+            for pc in "$PREFIX"/lib/pkgconfig/libssh2.pc "$PREFIX"/lib/pkgconfig/gcrypt.pc; do
+              [ -f "$pc" ] || { echo "   (pas de $(basename "$pc"))"; continue; }
+              echo "   --- $(basename "$pc")"
+              grep -E '^(Libs|Libs.private|Requires|Requires.private|Cflags)' "$pc" | sed 's/^/      /'
+            done
+            echo "== 3. ce que le configure du core a decide =="
+            for f in "$VJ/vlc/config.log" "$VJ/vlc/config.status"; do
+              [ -f "$f" ] || continue
+              echo "   --- $(basename "$f")"
+              grep -aE "checking for libgcrypt|with_libgcrypt|sftp|libgcrypt_|GCRYPT_LIBS|LIBSSH2" "$f" 2>/dev/null | tail -8 | sed 's/^/      /' | cut -c1-160
+            done
+          else
+            echo "   aucun dossier de contribs : le build n'a pas atteint cette phase"
+          fi
+          echo "== 4. lignes de liens et d'erreurs du journal complet =="
+          if [ -f build.log ]; then
+            echo "   build.log : $(wc -l < build.log) lignes, $(stat -c%s build.log) o"
+            grep -anE 'undefined symbol|ld\.lld|cannot find -l|Error [0-9]+$' build.log | tail -12 | sed 's/^/     /' | cut -c1-170
+            grep -anE 'libvlc\.so' build.log | grep -aE '\-l' | tail -2 | sed 's/^/     ligne de liens : /' | cut -c1-300
+          else
+            echo "   pas de build.log"
+          fi
+      
+      - name: "Journal de build complet en artefact (pour lire la 1ere erreur, pas que la derniere)"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: journal-de-build
+          path: |
+            build.log
+            init.log
+          if-no-files-found: ignore
+          retention-days: 14
+  
       - name: "Portique : le binaire contient-il les algorithmes de Debian 13"
         run: |
           set -uo pipefail
