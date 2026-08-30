@@ -1,6 +1,6 @@
 # 🧪 Tester ANGi avec GitHub Actions (émulateur Android réel)
 
-Ce dossier contient tout le nécessaire pour tester **`ANGi-v1.1.apk`** sur un
+Ce dossier (`ANGi/`) contient tout le nécessaire pour tester **`ANGi/releases/ANGi-v1.1.apk`** sur un
 **vrai émulateur Android** hébergé par **GitHub Actions**, via l'action officielle
 [ReactiveCircus/android-emulator-runner](https://github.com/ReactiveCircus/android-emulator-runner).
 
@@ -29,7 +29,11 @@ angi-test/
 │   │   └── angi-test.yml        ← le workflow
 │   └── scripts/
 │       └── ui_tap.py            ← clic automatique sur l'UI
-├── ANGi-v1.1.apk                ← copier depuis /home/user/work/ANGi-v1.1.apk
+├── ANGi/
+│   ├── README-TEST.md         ← ce fichier
+│   ├── maquettes.html
+│   └── releases/
+│       └── ANGi-v1.1.apk          ← copier depuis /home/user/work/ANGi-v1.1.apk
 └── README.md                    ← (facultatif)
 ```
 

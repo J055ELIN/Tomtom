@@ -55,7 +55,7 @@ jobs:
             sleep 3
 
             echo "===== 1. Installation de l'APK ====="
-            adb install -r ANGi-v1.1.apk
+            adb install -r ANGi/releases/ANGi-v1.1.apk
             adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || echo "grant SMS ignoré"
             adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || echo "grant loc ignoré"
             adb shell pm grant com.starfleet.angi android.permission.POST_NOTIFICATIONS || echo "grant notif ignoré (API<33)"

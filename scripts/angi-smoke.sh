@@ -10,7 +10,7 @@ sleep 3
 adb emu geo fix 2.288156 49.872177 || true
 
 echo "=== 1. Installation ==="
-adb install -r ANGi-v2.35.apk
+adb install -r ANGi/releases/ANGi-v2.35.apk
 adb shell dumpsys package com.starfleet.angi | grep -E "versionCode|versionName" | head -2
 adb shell pm grant com.starfleet.angi android.permission.SEND_SMS || true
 adb shell pm grant com.starfleet.angi android.permission.ACCESS_FINE_LOCATION || true
