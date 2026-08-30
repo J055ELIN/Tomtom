@@ -1,0 +1,230 @@
+name: VLC Android SFTP fix build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a04f77-tomtom]
+    paths:
+      - 'vlc-sftp-fix/**'
+      - '.github/workflows/vlc-sftp-fix.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vlc-sftp-fix
+  cancel-in-progress: false
+
+jobs:
+  # --------------------------------------------------------------
+  # 1) Prove the patch: libssh2 (Libgcrypt) + sshd with ONLY rsa-sha2
+  # --------------------------------------------------------------
+  test-libssh2-fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (patch files)
+        uses: actions/checkout@v4
+
+      - name: Install build deps + sshd
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make cmake libgcrypt20-dev openssh-server ssh
+
+      - name: Setup modern sshd offering ONLY rsa-sha2 host keys
+        run: |
+          set -euxo pipefail
+          mkdir -p sshd-test
+          ssh-keygen -t rsa -b 3072 -N '' -f sshd-test/host_rsa_key -q
+          cat > sshd-test/sshd.conf <<EOF
+          Port 2222
+          ListenAddress 127.0.0.1
+          HostKey $PWD/sshd-test/host_rsa_key
+          HostKeyAlgorithms rsa-sha2-512,rsa-sha2-256
+          PubkeyAuthentication no
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitEmptyPasswords no
+          UsePAM no
+          PidFile $PWD/sshd-test/sshd.pid
+          LogLevel VERBOSE
+          EOF
+          /usr/sbin/sshd -f sshd-test/sshd.conf -E sshd-test/sshd.log || { echo "sshd failed to start"; cat sshd-test/sshd.log; exit 1; }
+          for i in $(seq 1 30); do
+            (echo > /dev/tcp/127.0.0.1/2222) >/dev/null 2>&1 && break
+            sleep 1
+          done
+          echo "--- sshd log ---"
+          cat sshd-test/sshd.log
+          echo "--- listening ---"
+          ss -ltnp | grep 2222 || true
+
+      - name: Build UNPATCHED libssh2 1.11.1 (Libgcrypt)
+        run: |
+          git clone --depth 1 --branch libssh2-1.11.1 https://github.com/libssh2/libssh2.git libssh2-unpatched
+          cmake -S libssh2-unpatched -B build-unpatched \
+            -DCRYPTO_BACKEND=Libgcrypt -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF \
+            -DENABLE_ZLIB_COMPRESSION=OFF -DCMAKE_INSTALL_PREFIX=$PWD/prefix-unpatched
+          cmake --build build-unpatched -j$(nproc)
+          cmake --install build-unpatched
+          gcc -o client-unpatched vlc-sftp-fix/test/client.c \
+            -I$PWD/prefix-unpatched/include -L$PWD/prefix-unpatched/lib \
+            -lssh2 -lgcrypt -lgpg-error -pthread
+
+      - name: Build PATCHED libssh2 1.11.1 (Libgcrypt)
+        run: |
+          cp -r libssh2-unpatched libssh2-patched
+          cd libssh2-patched
+          git apply $GITHUB_WORKSPACE/vlc-sftp-fix/patches/0001-libssh2-gcrypt-rsa-sha2.patch
+          cd ..
+          cmake -S libssh2-patched -B build-patched \
+            -DCRYPTO_BACKEND=Libgcrypt -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF \
+            -DENABLE_ZLIB_COMPRESSION=OFF -DCMAKE_INSTALL_PREFIX=$PWD/prefix-patched
+          cmake --build build-patched -j$(nproc)
+          cmake --install build-patched
+          gcc -o client-patched vlc-sftp-fix/test/client.c \
+            -I$PWD/prefix-patched/include -L$PWD/prefix-patched/lib \
+            -lssh2 -lgcrypt -lgpg-error -pthread
+
+      - name: Run handshake tests against modern sshd
+        run: |
+          set +e
+          echo "=== UNPATCHED (must FAIL) ==="
+          ./client-unpatched 127.0.0.1 2222
+          UNPATCHED_RC=$?
+          echo "unpatched rc=$UNPATCHED_RC"
+          echo "=== PATCHED (must SUCCEED with rsa-sha2) ==="
+          ./client-patched 127.0.0.1 2222
+          PATCHED_RC=$?
+          echo "patched rc=$PATCHED_RC"
+          echo "--- sshd handshake log ---"
+          grep -E "no matching|host key|kex" sshd-test/sshd.log | tail -20 || true
+          if [ "$UNPATCHED_RC" -eq 0 ]; then echo "FAIL: unpatched unexpectedly succeeded"; exit 1; fi
+          if [ "$PATCHED_RC" -ne 0 ]; then echo "FAIL: patched client did not negotiate rsa-sha2"; exit 1; fi
+          echo "TEST PASSED: patch enables rsa-sha2 negotiation"
+          echo "UNPATCHED_RC=$UNPATCHED_RC" > test-results.txt
+          echo "PATCHED_RC=$PATCHED_RC" >> test-results.txt
+          echo "RESULT=PASS" >> test-results.txt
+
+      - name: Publish test results to repo (so they can be read from outside GitHub)
+        if: always()
+        run: |
+          mkdir -p results
+          {
+            echo "## Test run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Run URL: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            cat test-results.txt 2>/dev/null || echo "(no result file)"
+            echo ""
+            echo "### sshd log"
+            cat sshd-test/sshd.log 2>/dev/null || echo "(no sshd log)"
+          } > results/latest.txt
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout -B ci-results
+          git add results/latest.txt
+          git commit -m "ci: publish libssh2 test results (run $GITHUB_RUN_ID)" || echo "nothing new to commit"
+          git push origin ci-results --force || echo "push failed"
+
+  # --------------------------------------------------------------
+  # 2) Build the full VLC Android APK (Dev flavor, arm64) with the fix
+  # --------------------------------------------------------------
+  build-apk-arm64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 540
+    needs: test-libssh2-fix
+    steps:
+      - name: Checkout (patch files)
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Android NDK r27c (required for arm64 VLC build)
+        uses: android-actions/setup-ndk@v3
+        with:
+          ndk-version: 27.2.12479018
+
+      - name: Install VLC build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            automake autopoint ant cmake build-essential libtool-bin patch \
+            pkg-config protobuf-compiler ragel subversion unzip flex \
+            wget gettext texinfo bison yasm nasm meson ninja-build gperf \
+            groff libarchive-tools
+          df -h
+
+      - name: Accept SDK licenses and pre-install SDK components
+        run: |
+          export ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" || true
+          ls "$ANDROID_HOME"
+
+      - name: Clone vlc-android + libvlcjni
+        run: |
+          git clone --depth 1 https://github.com/videolan/vlc-android.git vlc-android
+          cd vlc-android
+          git clone --single-branch --branch libvlcjni-3.x \
+            https://code.videolan.org/videolan/libvlcjni.git libvlcjni
+          cd libvlcjni
+          git reset --hard 81bb02ba48dcad32550e0626139a387b3c30af04
+          NDK_FULL_VERSION=$(grep -o '^Pkg.Revision.*[0-9]*.*' "$ANDROID_NDK_HOME/source.properties" | cut -d ' ' -f 3)
+          cat > local.properties <<EOF
+          sdk.dir=$ANDROID_HOME
+          android.ndkPath=$ANDROID_NDK_HOME
+          android.ndkFullVersion=$NDK_FULL_VERSION
+          cmake.dir=$(dirname $(dirname $(command -v cmake)))
+          EOF
+          echo "--- local.properties ---"
+          cat local.properties
+
+      - name: Clone + patch VLC 3.0.x sources
+        run: |
+          git clone --depth 1 --branch 3.0.x https://github.com/videolan/vlc.git vlc-src
+          cp vlc-sftp-fix/patches/0001-libssh2-gcrypt-rsa-sha2.patch \
+             vlc-src/contrib/src/ssh2/0001-libssh2-gcrypt-rsa-sha2.patch
+          cd vlc-src
+          git apply "$GITHUB_WORKSPACE/vlc-sftp-fix/patches/0002-vlc-apply-libssh2-patch.patch"
+          echo "--- contrib/src/ssh2/rules.mak ---"
+          grep -A2 -B1 "APPLY" contrib/src/ssh2/rules.mak
+          cd ..
+
+      - name: Build (libvlc + medialibrary + app, ABI arm64-v8a)
+        run: |
+          export ANDROID_SDK="$ANDROID_HOME"
+          export ANDROID_NDK="$ANDROID_NDK_HOME"
+          export VLC_SRC_DIR="$GITHUB_WORKSPACE/vlc-src"
+          ln -sfn "$VLC_SRC_DIR" vlc-android/libvlcjni/vlc
+          cd vlc-android
+          ./buildsystem/compile.sh -a arm64
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vlc-android-sftp-fix-arm64
+          path: |
+            vlc-android/application/**/build/outputs/apk/dev/*.apk
+          if-no-files-found: error
+
+      - name: Publish Release (best effort)
+        if: always()
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: vlc-sftp-fix-v3.7.2
+          name: VLC Android 3.7.2 Beta 1 — SFTP rsa-sha2 fix (arm64)
+          body: |
+            APK VLC Android construit depuis le fork avec le correctif SFTP
+            (libssh2 backend Libgcrypt : support des clés d'hôte
+            rsa-sha2-256 / rsa-sha2-512 pour OpenSSH ≥ 8.8 / Debian 13).
+
+            Voir `vlc-sftp-fix/README.md` pour le détail du correctif.
+          files: |
+            vlc-android/application/**/build/outputs/apk/dev/*.apk

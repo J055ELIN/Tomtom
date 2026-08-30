@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Chrome ADB Scrcpy</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; background: #1e1e1e; color: #fff; }
+    
+    #toolbar { 
+      padding: 8px 10px; 
+      background: #333; 
+      display: flex; 
+      gap: 10px; 
+      align-items: center; 
+      flex-wrap: wrap; 
+      border-bottom: 1px solid #444; 
+    }
+    
+    .divider { width: 1px; height: 24px; background: #555; margin: 0 4px; }
+    
+    .setting-item { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+    .setting-item label { color: #ccc; white-space: nowrap; }
+    .setting-item select { background: #444; color: white; border: 1px solid #555; padding: 3px 6px; border-radius: 4px; font-size: 12px; outline: none; }
+    .setting-item input[type="checkbox"] { margin: 0; cursor: pointer; }
+    
+    .opt-input:disabled { opacity: 0.5; cursor: not-allowed; }
+    .opt-input:disabled + label { opacity: 0.5; }
+    
+    #container { flex: 1; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative; background: #000; }
+    canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+    
+    button { padding: 6px 12px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 12px; white-space: nowrap; }
+    button:hover:not(:disabled) { background: #0056b3; }
+    .tab-btn { padding: 8px 16px; cursor: pointer; border: none; background: #444; color: #aaa; font-size: 12px; }
+    .tab-btn.active { background: #007bff; color: white; }
+    #tab-bar { display: flex; background: #222; border-bottom: 1px solid #444; }
+    #panel-main, #panel-debug { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    #panel-debug { display: none; background: #111; padding: 10px; }
+    #debugLog { flex: 1; width: 100%; font-family: monospace; font-size: 11px; background: #000; color: #0f0; border: 1px solid #444; padding: 5px; resize: none; overflow-y: auto; }
+    .debug-controls { margin-bottom: 10px; display: flex; gap: 10px; }
+  </style>
+</head>
+<body>
+  <div id="tab-bar">
+    <button id="tabMainBtn" class="tab-btn active">Screen</button>
+    <button id="tabDebugBtn" class="tab-btn">Debug Logs</button>
+  </div>
+
+  <div id="panel-main">
+    <div id="toolbar">
+      <button id="connectBtn">Connect</button>
+      <button id="startBtn" disabled>Start</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+      
+      <div class="divider"></div>
+      
+      <div class="setting-item">
+        <label>Size:</label>
+        <select id="optMaxSize" class="opt-input">
+          <option value="0">Original</option>
+          <option value="1920">1920</option>
+          <option value="1080">1080</option>
+          <option value="720">720</option>
+        </select>
+      </div>
+      
+      <div class="setting-item">
+        <label>Video:</label>
+        <select id="optVideoEnabled" class="opt-input">
+          <option value="true">Enabled</option>
+          <option value="false">Disabled (Control Only)</option>
+        </select>
+      </div>
+
+      <div class="setting-item">
+        <label>Codec:</label>
+        <select id="optVideoCodec" class="opt-input">
+          <option value="h264-sw" selected>H.264 (Force Android SW Encoder)</option>
+          <option value="h264">H.264 (Hardware)</option>
+          <option value="tinyh264">H.264 (Software TinyH264)</option>
+          <option value="h265">H.265 (HEVC)</option>
+          <option value="av1">AV1</option>
+        </select>
+      </div>
+      
+      <div class="setting-item">
+        <label>Bitrate:</label>
+        <select id="optBitRate" class="opt-input">
+          <option value="8000000">8 Mbps</option>
+          <option value="4000000">4 Mbps</option>
+          <option value="2000000">2 Mbps</option>
+          <option value="1000000">1 Mbps</option>
+        </select>
+      </div>
+      
+      <div class="setting-item">
+        <label>FPS:</label>
+        <select id="optMaxFps" class="opt-input">
+          <option value="0">No Limit</option>
+          <option value="60">60 FPS</option>
+          <option value="30">30 FPS</option>
+        </select>
+      </div>
+      
+      <div class="setting-item">
+        <label>Alt Desk:</label>
+        <select id="optAltDesk" class="opt-input">
+          <option value="">Disabled</option>
+          <option value="1920x1080/160">160 DPI (Tiny)</option>
+          <option value="1920x1080/320">320 DPI (Normal)</option>
+          <option value="1920x1080/420">420 DPI (Large)</option>
+          <option value="1920x1080/600">600 DPI (Huge)</option>
+        </select>
+      </div>
+      
+      <div class="setting-item">
+        <input type="checkbox" id="optTurnScreenOff" class="opt-input">
+        <label for="optTurnScreenOff">Screen off</label>
+      </div>
+      
+      <div class="setting-item">
+        <input type="checkbox" id="optStayAwake" class="opt-input">
+        <label for="optStayAwake">Stay awake</label>
+      </div>
+
+      <span id="status" style="margin-left: auto; color: #aaa; font-size: 12px; white-space: nowrap;">Disconnected</span>
+    </div>
+
+    <div id="container">
+      <canvas id="videoCanvas" tabindex="0" style="outline: none;"></canvas>
+    </div>
+  </div>
+
+  <div id="panel-debug">
+    <div class="debug-controls">
+      <button id="btnCopyLog">Copy Logs</button>
+      <button id="btnExportJson">Export Stream JSON</button>
+      <button id="btnClearLog">Clear Logs</button>
+      <button id="btnLogcat">Fetch adb logcat</button>
+    </div>
+    <textarea id="debugLog" readonly></textarea>
+  </div>
+  
+  <script src="dist/bundle.js"></script>
+</body>
+</html>
