@@ -31,7 +31,7 @@ on:
   workflow_dispatch:
     inputs:
       abi:
-        description: "VLCFIX_ABI a construire"
+        description: "Architecture de l'APK a construire"
         type: choice
         default: arm64
         options: [arm64, arm, x86_64, all]
@@ -290,6 +290,26 @@ jobs:
           # 'if' et non '[ … ] && args=…' : sous set -e, un test faux en derniere position
           # ferait echouer l'etape (verifie : '[ false ] && x' laisse le shell sur 1).
           if [ "$VLCFIX_RELEASE_APK" = "true" ]; then args="$args --release"; fi
+          # 0004 ne corrige pas le core mais le constructeur de libvlc.so : sa liste VLC_CONTRIB_LDFLAGS
+          # vient de 'pkg-config --libs' sur les .pc du prefix des contribs, et gcrypt.pc n'y fait entrer
+          # que -lgcrypt (sa dependance libgpg-error est en Requires.private, donc ignoree sans --static).
+          # Mesure sur le run #9 : 359 options -l, -lgcrypt en position 297, -lgpg-error ABSENTE, alors que
+          # libgpg-error.a est installe -> ld.lld: "undefined symbol: gpgrt_fclose", referencee par les
+          # objets de libgcrypt (mpicoder.c, ec.c, random-system.c, primegen.c, fips.c, global.c).
+          # En liaison statique, l'archive appelee doit suivre l'appelante : on la rajoute en fin de liste.
+          # Applique ici, au dernier moment : compile.sh ne reinitialise libvlcjni (l.294-304) que si le
+          # dossier manque, ce qui n'est pas le cas en sortie de l'etape 8 -> rien ne remettra le fichier a plat.
+          P4="$GITHUB_WORKSPACE/vlc-sftp/patches/0004-libvlcjni-link-libgpg-error-on-android.patch"
+          if git -C libvlcjni apply --check "$P4" 2>/dev/null; then
+          git -C libvlcjni apply "$P4" && echo "  0004 applique a libvlcjni"
+          elif grep -q -- '-lgpg-error' libvlcjni/buildsystem/compile-libvlc.sh; then
+          echo "  0004 deja en place (re-execution de l'etape)"
+          else
+          echo "  0004 inapplicable sur ce libvlcjni :"
+          git -C libvlcjni apply --check "$P4" 2>&1 | head -3 | sed 's/^/    /'
+          exit 1
+          fi
+          grep -q -- '-lgpg-error' libvlcjni/buildsystem/compile-libvlc.sh || { echo "  garde : -lgpg-error absent du fichier apres application"; exit 1; }
           echo "  commande : ./buildsystem/compile.sh $args"
           set +e
           ./buildsystem/compile.sh $args > "$GITHUB_WORKSPACE/build.log" 2>&1
@@ -310,7 +330,7 @@ jobs:
           # 30 lignes ne permettait pas de trancher entre deux mecanismes : (a) libgpg-error jamais
           # construit, (b) construit mais absent de la ligne de liens. Ces trois sondes separent les deux.
           VJ="$VLC_ANDROID/libvlcjni"
-          PREFIX="$(find "$VJ/vlc/contrib" -maxdepth 1 -type d -name '*-android-*' 2>/dev/null | head -1)"
+          PREFIX="$(find "$VJ/vlc/contrib" -maxdepth 1 -type d -name '*-linux-android' 2>/dev/null | head -1)"
           echo "== 1. ce qui existe reellement dans le prefix des contribs (${PREFIX:-introuvable}) =="
           if [ -n "${PREFIX:-}" ]; then
             for l in libssh2 libgcrypt libgpg-error libmbedcrypto libmbedtls libmbedx509; do
@@ -334,6 +354,16 @@ jobs:
             done
           else
             echo "   aucun dossier de contribs : le build n'a pas atteint cette phase"
+          fi
+          echo "== 3bis. les .pc qui fabriquent la ligne de liens =="
+          for pc in gcrypt libgpg-error libssh2 mbedtls; do
+            f="$PREFIX/lib/pkgconfig/$pc.pc"
+            if [ -f "$f" ]; then echo "   --- $pc.pc"; grep -E '^(Libs|Requires)' "$f" | sed 's/^/      /'; else echo "   --- $pc.pc : absent du prefix"; fi
+          done
+          W=$(grep -an 'non-system libraries in linker flags' build.log 2>/dev/null | head -1 | cut -d: -f1)
+          if [ -n "${W:-}" ]; then
+            echo "   positions des -l dans la ligne retenue par ndk-build (ligne $W du journal) :"
+            awk -v n="$W" 'NR==n' build.log | grep -oE -- '-l[A-Za-z0-9_.+-]+' | grep -nE -- '-l(gcrypt|gpg-error|ssh2|mbedcrypto|mbedx509|lzma|xml2)$' | sed 's/^/      /' | head -12
           fi
           echo "== 4. lignes de liens et d'erreurs du journal complet =="
           if [ -f build.log ]; then
