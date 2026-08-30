@@ -18,7 +18,7 @@ concurrency:
 jobs:
   # --------------------------------------------------------------
   # 1) Prove the patch: libssh2 (Libgcrypt) + sshd with ONLY rsa-sha2
-  # ---------------------------------------------------------------
+  # --------------------------------------------------------------
   test-libssh2-fix:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -33,29 +33,31 @@ jobs:
 
       - name: Setup modern sshd offering ONLY rsa-sha2 host keys
         run: |
-          sudo mkdir -p /run/sshd
-          sudo ssh-keygen -A
-          cat > /tmp/sshd_test.conf <<'EOF'
+          set -euxo pipefail
+          mkdir -p sshd-test
+          ssh-keygen -t rsa -b 3072 -N '' -f sshd-test/host_rsa_key -q
+          cat > sshd-test/sshd.conf <<EOF
           Port 2222
           ListenAddress 127.0.0.1
-          HostKey /etc/ssh/ssh_host_rsa_key
+          HostKey $PWD/sshd-test/host_rsa_key
           HostKeyAlgorithms rsa-sha2-512,rsa-sha2-256
           PubkeyAuthentication no
           PasswordAuthentication no
           KbdInteractiveAuthentication no
           PermitEmptyPasswords no
           UsePAM no
-          PidFile /tmp/sshd_test.pid
+          PidFile $PWD/sshd-test/sshd.pid
           LogLevel VERBOSE
           EOF
-          nohup setsid sudo /usr/sbin/sshd -f /tmp/sshd_test.conf -E /tmp/sshd_test.log -D >/dev/null 2>&1 &
-          disown
+          /usr/sbin/sshd -f sshd-test/sshd.conf -E sshd-test/sshd.log || { echo "sshd failed to start"; cat sshd-test/sshd.log; exit 1; }
           for i in $(seq 1 30); do
             (echo > /dev/tcp/127.0.0.1/2222) >/dev/null 2>&1 && break
             sleep 1
           done
           echo "--- sshd log ---"
-          cat /tmp/sshd_test.log
+          cat sshd-test/sshd.log
+          echo "--- listening ---"
+          ss -ltnp | grep 2222 || true
 
       - name: Build UNPATCHED libssh2 1.11.1 (Libgcrypt)
         run: |
@@ -96,14 +98,36 @@ jobs:
           PATCHED_RC=$?
           echo "patched rc=$PATCHED_RC"
           echo "--- sshd handshake log ---"
-          grep -E "no matching|host key|kex" /tmp/sshd_test.log | tail -20 || true
+          grep -E "no matching|host key|kex" sshd-test/sshd.log | tail -20 || true
           if [ "$UNPATCHED_RC" -eq 0 ]; then echo "FAIL: unpatched unexpectedly succeeded"; exit 1; fi
           if [ "$PATCHED_RC" -ne 0 ]; then echo "FAIL: patched client did not negotiate rsa-sha2"; exit 1; fi
           echo "TEST PASSED: patch enables rsa-sha2 negotiation"
+          echo "UNPATCHED_RC=$UNPATCHED_RC" > test-results.txt
+          echo "PATCHED_RC=$PATCHED_RC" >> test-results.txt
+          echo "RESULT=PASS" >> test-results.txt
 
-  # ---------------------------------------------------------------
+      - name: Publish test results to repo (so they can be read from outside GitHub)
+        if: always()
+        run: |
+          mkdir -p results
+          {
+            echo "## Test run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Run URL: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            cat test-results.txt 2>/dev/null || echo "(no result file)"
+            echo ""
+            echo "### sshd log"
+            cat sshd-test/sshd.log 2>/dev/null || echo "(no sshd log)"
+          } > results/latest.txt
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout -B ci-results
+          git add results/latest.txt
+          git commit -m "ci: publish libssh2 test results (run $GITHUB_RUN_ID)" || echo "nothing new to commit"
+          git push origin ci-results --force || echo "push failed"
+
+  # --------------------------------------------------------------
   # 2) Build the full VLC Android APK (Dev flavor, arm64) with the fix
-  # ---------------------------------------------------------------
+  # --------------------------------------------------------------
   build-apk-arm64:
     runs-on: ubuntu-24.04
     timeout-minutes: 540
