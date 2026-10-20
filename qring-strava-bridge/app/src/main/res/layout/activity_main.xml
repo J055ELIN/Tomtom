@@ -136,6 +136,12 @@
             android:text="@string/btn_simulate" />
     </LinearLayout>
 
+    <Button
+        android:id="@+id/btnSelfTest"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/btn_selftest" />
+
     <ListView
         android:id="@+id/deviceList"
         android:layout_width="match_parent"

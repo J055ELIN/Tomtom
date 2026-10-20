@@ -137,6 +137,15 @@ public class HrmPeripheral {
             log("⚠ Matériel sans support multi-publicité BLE — la publicité peut échouer");
         }
 
+        if (server != null) {
+            try {
+                server.clearServices();
+                server.close();
+            } catch (SecurityException ignored) {
+            }
+            server = null;
+            log("Ancien serveur GATT fermé (nettoyage)");
+        }
         try {
             server = btManager.openGattServer(context, serverCallback);
         } catch (SecurityException e) {
@@ -369,31 +378,37 @@ public class HrmPeripheral {
 
         switch (advStrategy) {
             case 0:
-                // recommandé : UUID dans la publicité, nom dans la réponse de scan
+                // le plus compatible : UUID + nom dans le MÊME paquet (certains
+                // scanners ignorent purement et simplement la réponse de scan)
+                data = new AdvertiseData.Builder()
+                        .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
+                        .setIncludeDeviceName(true)
+                        .setIncludeTxPowerLevel(false)
+                        .build();
+                scanResponse = null;
+                label = "UUID 0x180D + nom (paquet unique)";
+                break;
+            case 1:
                 data = new AdvertiseData.Builder()
                         .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
                         .setIncludeTxPowerLevel(false)
                         .build();
-                if (!localName().isEmpty() && localName().length() <= 26) {
-                    scanResponse = new AdvertiseData.Builder()
-                            .setIncludeDeviceName(true)
-                            .build();
-                }
-                label = "UUID 0x180D + nom";
+                scanResponse = new AdvertiseData.Builder()
+                        .setIncludeDeviceName(true)
+                        .build();
+                label = "UUID dans publicité + nom en réponse de scan";
                 break;
-            case 1:
-                // certains scanners n'exploitent que la réponse de scan
+            case 2:
                 data = new AdvertiseData.Builder()
+                        .setIncludeDeviceName(true)
                         .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
                         .build();
                 scanResponse = new AdvertiseData.Builder()
                         .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
-                        .setIncludeDeviceName(true)
                         .build();
-                label = "UUID dans publicité + réponse de scan";
+                label = "UUID publicité + réponse de scan";
                 break;
             default:
-                // minimal : UUID seul, sans nom
                 data = new AdvertiseData.Builder()
                         .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
                         .build();
@@ -428,7 +443,7 @@ public class HrmPeripheral {
 
     private void nextStrategyOrRetry(String reason) {
         advStrategy++;
-        if (advStrategy < 3) {
+        if (advStrategy < 4) {
             log("Publicité refusée (" + reason + ") → variante suivante");
             startAdvertising();
             return;
@@ -552,6 +567,26 @@ public class HrmPeripheral {
                 clients.add(device);
                 log("Central BLE connecté : " + device.getAddress()
                         + " (" + clients.size() + " client(s))");
+                if (!servicesReady) {
+                    // Un client qui se connecte avant l'enregistrement des services
+                    // mémorise une base GATT vide et reste bloqué. On le déconnecte
+                    // pour qu'il réessaie proprement.
+                    log("   ⚠ connecté avant l'enregistrement des services → reconnexion forcée");
+                    final BluetoothDevice early = device;
+                    gattHandler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                if (server != null) {
+                                    server.cancelConnection(early);
+                                }
+                            } catch (SecurityException ignored) {
+                            }
+                        }
+                    }, 400L);
+                    listener.onClientCountChanged(clients.size());
+                    return;
+                }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 clients.remove(device);
                 for (String k : new ArrayList<>(subscribed)) {

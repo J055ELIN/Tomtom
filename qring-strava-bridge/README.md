@@ -1,4 +1,4 @@
-# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.2)
+# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.3)
 
 Transforme une bague **QRing / Colmi R0x** (R02, R03, R06, R10…) en **capteur de fréquence
 cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
@@ -8,7 +8,7 @@ cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
    (protocole 0x69)          rôle central + rôle GATT server        (0x180D / 0x2A37)
 ```
 
-* **APK prête à installer :** [`releases/QRingStravaBridge-v3.2.apk`](releases/QRingStravaBridge-v3.2.apk)
+* **APK prête à installer :** [`releases/QRingStravaBridge-v3.3.apk`](releases/QRingStravaBridge-v3.3.apk)
   (41 Ko, minSdk 23, targetSdk 34, signée debug v1 + v2).
 * **Aucune dépendance externe** : 100 % API Android, aucun Google Play Services.
 
@@ -36,7 +36,7 @@ depuis l'API 18**. Ce qui manquait dans l'ancienne version :
 ## 2. Installation
 
 ```bash
-adb install -r releases/QRingStravaBridge-v3.2.apk
+adb install -r releases/QRingStravaBridge-v3.3.apk
 ```
 
 Ou copier l'APK sur le téléphone et l'ouvrir (autoriser les sources inconnues).
@@ -76,7 +76,25 @@ montraient les journaux) ne trouvait aucun service `0x180D` et repartait sans s'
 La v3.2 les enregistre **en séquence**, puis démarre la publicité, et affiche
 « FC souscrite » dès qu'une application active réellement les notifications.
 
-## 3 bis. La bannière de statut (v3.2)
+## 3 quater. Autotest BLE (v3.3)
+
+Bouton **« Autotest BLE (pont → capteur) »** : le téléphone se teste lui-même, sans
+application tierce.
+
+1. il scanne sa **propre publicité** et vérifie qu'elle annonce `0x180D` ;
+2. il s'y **connecte comme un client** et découvre les services ;
+3. il **s'abonne à `0x2A37`** et vérifie qu'il reçoit au moins 2 mesures.
+
+Verdict affiché dans une boîte de dialogue et consigné dans le journal :
+
+| Verdict | Signification |
+|---|---|
+| « Capteur FC BLE validé … N mesures reçues » | le pont est un capteur cardiaque BLE valide ; un échec côté Strava vient alors de Strava (cache de capteurs, permission, version) et non de l'application |
+| « Publicité invisible en 12 s » | le téléphone ne se voit pas lui-même annoncer `0x180D` → publicité BLE non fonctionnelle sur ce modèle/OS |
+| « service 0x180D ABSENT » | la base GATT n'a pas été publiée correctement (le message liste les services vus) |
+| « aucune mesure reçue » | l'abonnement est accepté mais aucune FC n'est poussée (vérifier que le mode test est actif) |
+
+## 3 bis. La bannière de statut (v3.3)
 
 Sous la valeur de FC, la ligne d'état est colorée :
 

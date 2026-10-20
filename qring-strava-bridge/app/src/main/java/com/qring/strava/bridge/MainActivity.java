@@ -50,7 +50,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
     private ScrollView logScroll;
     private ListView deviceList;
     private Button btnScan, btnConnect, btnDisconnect, btnStartBridge, btnStopBridge,
-            btnSimulate, btnClear, btnDiagnostic, btnShareLog;
+            btnSimulate, btnClear, btnDiagnostic, btnShareLog, btnSelfTest;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<String[]> found = new ArrayList<>();   // {nom, adresse}
@@ -92,6 +92,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         btnClear = findViewById(R.id.btnClear);
         btnDiagnostic = findViewById(R.id.btnDiagnostic);
         btnShareLog = findViewById(R.id.btnShareLog);
+        btnSelfTest = findViewById(R.id.btnSelfTest);
 
         BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         btAdapter = bm != null ? bm.getAdapter() : null;
@@ -168,6 +169,12 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
             @Override
             public void onClick(View v) {
                 shareLog();
+            }
+        });
+        btnSelfTest.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                runSelfTest();
             }
         });
 
@@ -510,6 +517,9 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         sb.append("\nPont : ").append(BridgeState.bridgeRunning ? "actif" : "arrêté").append('\n');
         sb.append("Publicité BLE : ").append(BridgeState.advertising ? "ACTIVE" : "inactive").append('\n');
         sb.append("Clients connectés : ").append(BridgeState.peripheralClients).append('\n');
+        sb.append("Autotest BLE : ")
+                .append(BridgeState.selfTestPassed ? "RÉUSSI (capteur validé)" : "non effectué/échoué")
+                .append('\n');
         sb.append("Abonnement FC (notifications) : ")
                 .append(BridgeState.subscribed ? "OUI — une appli reçoit la FC" : "non").append('\n');
         sb.append("Source FC : ").append(BridgeState.source)
@@ -533,6 +543,54 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
             }
         }
         return "n/a (Android < 12)";
+    }
+
+    // ==================================================================
+    // Autotest BLE
+    // ==================================================================
+
+    private void runSelfTest() {
+        if (!BridgeState.bridgeRunning) {
+            Toast.makeText(this, "Démarrez d'abord le pont (mode test ou bague)",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        Logs.add("[autotest] démarrage");
+        final android.app.ProgressDialog progress =
+                new android.app.ProgressDialog(this);
+        progress.setTitle(R.string.selftest_title);
+        progress.setMessage("Recherche de notre propre publicité…");
+        progress.setCancelable(false);
+        progress.show();
+
+        SelfTest test = new SelfTest(this, new SelfTest.Callback() {
+            @Override
+            public void onStep(final String message) {
+                Logs.add("[autotest] " + message);
+                progress.setMessage(message);
+            }
+
+            @Override
+            public void onFinished(final boolean success, final String verdict) {
+                Logs.add("[autotest] " + (success ? "SUCCÈS — " : "ÉCHEC — ") + verdict);
+                if (progress.isShowing()) {
+                    progress.dismiss();
+                }
+                new android.app.AlertDialog.Builder(MainActivity.this)
+                        .setTitle(success ? "Autotest réussi ✔" : "Autotest en échec ✘")
+                        .setMessage(verdict)
+                        .setPositiveButton(R.string.btn_ok, null)
+                        .show();
+                BridgeState.setStatus(success
+                        ? "Autotest OK : le pont est un capteur FC BLE valide"
+                        : "Autotest : " + verdict);
+                if (success) {
+                    BridgeState.selfTestPassed = true;
+                    BridgeState.notifyListeners();
+                }
+            }
+        });
+        test.start();
     }
 
     private void showDiagnostic() {
