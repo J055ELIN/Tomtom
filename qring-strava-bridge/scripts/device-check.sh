@@ -44,4 +44,4 @@ adb logcat -d -s QRingBridge | tail -60 | tee logcat_qring.txt
 
 echo
 echo "Fichiers produits : ecran_qring.png, ui_qring.xml, logcat_qring.txt"
-echo "Dans Strava : Enregistrer → Capteurs → Fréquence cardiaque → « QRing HRM »"
+echo "Dans Strava : Enregistrer → Capteurs → Fréquence cardiaque → le nom Bluetooth du téléphone"

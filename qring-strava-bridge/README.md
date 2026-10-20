@@ -27,7 +27,7 @@ depuis l'API 18**. Ce qui manquait dans l'ancienne version :
 |---|---|---|
 | Serveur GATT | appel sur `BluetoothAdapter` (inexistant) → abandon | `BluetoothManager.openGattServer()` ✔ |
 | Services exposés | aucun | FC `0x180D`/`0x2A37` + Body Sensor Location `0x2A38`, batterie `0x180F`, Device Info `0x180A` |
-| Publicité BLE | absente | `BluetoothLeAdvertiser` + `BLUETOOTH_ADVERTISE`, UUID `0x180D` annoncé, nom « QRing HRM » |
+| Publicité BLE | absente | `BluetoothLeAdvertiser` + `BLUETOOTH_ADVERTISE`, UUID `0x180D` annoncé, connectable, nom = celui du téléphone |
 | Cycle de vie | service non démarré | service de premier plan `connectedDevice` + wake lock (écran éteint) |
 | Protocole bague | trame « 0x1e » seule, offsets supposés | vérifié sur le client Python `qlam-ai/qring` : `0x69` start, `0x6A` stop, `0x1E`+`0x33` keep-alive, trame 16 octets + checksum |
 | Reconnexion | aucune | reconnexion automatique + relance du flux si la FC se tait |
@@ -50,12 +50,17 @@ Android 12+ demandera : **Appareils à proximité** (scan, connexion, **publicit
 3. **Connecter la bague** : le service démarre, la FC s'affiche en grand, et la ligne
    « Pont BLE » indique `publicité 0x180D` puis `1 client(s)` dès qu'une app se connecte.
 4. Dans **Strava** : *Enregistrer* → icône capteurs → **Fréquence cardiaque** →
-   choisir **QRing HRM** (le téléphone apparaît comme ceinture cardiaque).
+   choisir l'entrée correspondant au **nom Bluetooth de votre téléphone**
+   (il apparaît comme une ceinture cardiaque).
 5. Démarrer l'activité : la FC est transmise en temps réel (notification `0x2A37`, 1 Hz).
 
-> Astuce : si Strava ne voit pas le capteur, ouvrir les réglages Bluetooth d'Android et
-> vérifier qu'aucun autre appareil n'occupe la publicité ; désactiver puis réactiver le
-> Bluetooth. Le nom affiché est **QRing HRM** (l'app le définit comme nom Bluetooth local).
+> Le capteur apparaît dans Strava **sous le nom Bluetooth du téléphone**
+> (l'application ne le renomme pas : cela modifierait définitivement le nom de votre
+> appareil). Si vous voulez un nom explicite, changez-le une fois dans
+> *Paramètres → À propos du téléphone → Nom de l'appareil*.
+>
+> Si Strava ne voit pas le capteur : désactiver puis réactiver le Bluetooth, puis
+> relancer le scan des capteurs dans Strava.
 
 ### Mode test (sans bague)
 

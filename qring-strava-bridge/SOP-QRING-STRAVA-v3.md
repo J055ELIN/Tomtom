@@ -171,7 +171,7 @@ adb logcat -s QRingBridge
 ```
 
 1. **Mode test d'abord** : bouton « Mode test (FC simulée) » → dans Strava, la ceinture
-   **QRing HRM** doit apparaître et afficher 62–158 bpm. Si ce point fonctionne, la moitié
+   le nom Bluetooth du téléphone doit apparaître et afficher 62–158 bpm. Si ce point fonctionne, la moitié
    « Strava » du problème est validée (indépendamment de la bague).
 2. **Puis la bague** : Scanner → sélection → « Connecter la bague ». Vérifier le journal :
    * `Notifications activées` → connexion GATT OK ;

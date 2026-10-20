@@ -64,8 +64,6 @@ public class HrmPeripheral {
 
     public static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805F9B34FB");
 
-    private static final String DEVICE_NAME = "QRing HRM";
-
     private final Context context;
     private final Listener listener;
 
@@ -268,10 +266,6 @@ public class HrmPeripheral {
                 .build();
 
         try {
-            // Nom visible dans le gestionnaire Bluetooth / Strava
-            if (adapter.getName() == null || !DEVICE_NAME.equals(adapter.getName())) {
-                adapter.setName(DEVICE_NAME);
-            }
             advertiser.startAdvertising(settings, data, scanResponse, advertiseCallback);
         } catch (SecurityException e) {
             log("startAdvertising refusé (BLUETOOTH_ADVERTISE) : " + e.getMessage());
@@ -293,7 +287,8 @@ public class HrmPeripheral {
         @Override
         public void onStartSuccess(AdvertiseSettings settingsInEffect) {
             advertised = true;
-            log("✔ Publicité BLE active — « " + DEVICE_NAME + " » visible comme capteur FC (0x180D)");
+            log("✔ Publicité BLE active — capteur FC 0x180D visible sous le nom Bluetooth du téléphone ("
+                    + localName() + ")");
             listener.onAdvertisingStarted(true, "Publicité active");
         }
 
@@ -477,6 +472,16 @@ public class HrmPeripheral {
         byte[] out = new byte[data.length - offset];
         System.arraycopy(data, offset, out, 0, out.length);
         return out;
+    }
+
+    /** Nom Bluetooth du téléphone : c'est celui que Strava affichera dans la liste des capteurs. */
+    private String localName() {
+        try {
+            String n = adapter != null ? adapter.getName() : null;
+            return n != null && !n.isEmpty() ? n : "téléphone";
+        } catch (SecurityException e) {
+            return "téléphone";
+        }
     }
 
     private void log(String message) {
