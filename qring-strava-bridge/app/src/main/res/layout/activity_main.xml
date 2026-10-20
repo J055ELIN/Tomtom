@@ -159,9 +159,30 @@
             android:textSize="10sp" />
     </ScrollView>
 
-    <Button
-        android:id="@+id/btnClear"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/btn_clear" />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnDiagnostic"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/btn_diag" />
+
+        <Button
+            android:id="@+id/btnShareLog"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1.4"
+            android:text="@string/btn_share_log" />
+
+        <Button
+            android:id="@+id/btnClear"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/btn_clear" />
+    </LinearLayout>
 </LinearLayout>

@@ -1,4 +1,4 @@
-# QRing / Colmi → Strava — pont de fréquence cardiaque BLE
+# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.1)
 
 Transforme une bague **QRing / Colmi R0x** (R02, R03, R06, R10…) en **capteur de fréquence
 cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
@@ -8,8 +8,8 @@ cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
    (protocole 0x69)          rôle central + rôle GATT server        (0x180D / 0x2A37)
 ```
 
-* **APK prête à installer :** [`releases/QRingStravaBridge-v3.0.apk`](releases/QRingStravaBridge-v3.0.apk)
-  (37 Ko, minSdk 23, targetSdk 34, signée debug v1 + v2).
+* **APK prête à installer :** [`releases/QRingStravaBridge-v3.1.apk`](releases/QRingStravaBridge-v3.1.apk)
+  (41 Ko, minSdk 23, targetSdk 34, signée debug v1 + v2).
 * **Aucune dépendance externe** : 100 % API Android, aucun Google Play Services.
 
 ---
@@ -67,6 +67,27 @@ Android 12+ demandera : **Appareils à proximité** (scan, connexion, **publicit
 Bouton **Mode test (FC simulée)** : le pont expose une FC sinusoïdale 62–158 bpm.
 Idéal pour vérifier la liaison avec Strava avant même d'avoir la bague.
 
+## 3 bis. La bannière de statut (v3.1)
+
+Sous la valeur de FC, la ligne d'état est colorée :
+
+| Couleur | Signification |
+|---|---|
+| **vert** | publicité BLE active : le téléphone est visible comme capteur FC |
+| **bleu** | une application (Strava ?) est connectée au pont |
+| **rouge** | la publicité a échoué — la raison exacte est affichée et re-tentée toutes les 15 s |
+| noir | pont arrêté |
+
+Deux boutons aident au diagnostic :
+
+* **Diagnostic** : permissions, nom Bluetooth, support du mode périphérique,
+  nombre de clients connectés, état de la bague ;
+* **Partager le journal** : envoie le diagnostic + le journal complet par e-mail,
+  SMS, WhatsApp… (pas besoin de copier-coller).
+
+La publicité essaie automatiquement trois variantes (UUID + nom, UUID dans la
+publicité et dans la réponse de scan, UUID seul) avant de réessayer.
+
 ## 4. Dépannage
 
 | Symptôme | Cause probable | Solution |
@@ -75,7 +96,8 @@ Idéal pour vérifier la liaison avec Strava avant même d'avoir la bague.
 | Bague connectée mais `-- bpm` | modèle différent (R06/R10) ou capteur mal porté | le journal affiche les trames reçues ; ajuster `RingBleClient.handlePacket()` |
 | `Publicité BLE non supportée` | téléphone sans mode périphérique | le pont GATT reste actif, mais Strava ne peut pas découvrir l'appareil |
 | `Publicité BLE en échec : non supporté par le matériel` | idem (émulateur, vieux téléphone) | tester sur le Pixel 9a |
-| Strava ne propose pas le capteur | Strava garde en cache la liste des capteurs | fermer/rouvrir Strava, ou relancer le scan des capteurs |
+| Strava ne propose pas le capteur | Strava garde en cache la liste ; le capteur y figure parfois déjà sous le **nom Bluetooth du téléphone** | vérifier la couleur de la bannière (verte ?), puis ouvrir *Capteurs → Fréquence cardiaque* et toucher l'entrée existante ; sinon désactiver/réactiver le Bluetooth et relancer la recherche |
+| Le capteur apparaît mais reste « non connecté » | l'ancienne association Strava pointe vers l'app arrêtée | relancer le pont **avant** d'ouvrir Strava, puis toucher le capteur |
 | La FC se fige après quelques minutes | flux bague interrompu | l'app relance automatiquement `0x69` après 25 s sans donnée (visible au journal) |
 
 Le **journal** de l'écran d'accueil est aussi envoyé à logcat :

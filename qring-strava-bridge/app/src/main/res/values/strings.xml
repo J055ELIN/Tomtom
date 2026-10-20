@@ -13,7 +13,11 @@
     <string name="btn_start_bridge">Démarrer le pont FC</string>
     <string name="btn_stop_bridge">Arrêter le pont</string>
     <string name="btn_simulate">Mode test (FC simulée)</string>
-    <string name="btn_clear">Effacer le journal</string>
+    <string name="btn_clear">Effacer</string>
+    <string name="btn_diag">Diagnostic</string>
+    <string name="btn_share_log">Partager le journal</string>
+    <string name="btn_ok">OK</string>
+    <string name="share_title">Journal QRing → Strava</string>
 
     <string name="label_ring">Bague : aucune</string>
     <string name="label_bridge">Pont BLE : arrêté</string>

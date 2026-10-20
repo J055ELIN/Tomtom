@@ -50,7 +50,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
     private ScrollView logScroll;
     private ListView deviceList;
     private Button btnScan, btnConnect, btnDisconnect, btnStartBridge, btnStopBridge,
-            btnSimulate, btnClear;
+            btnSimulate, btnClear, btnDiagnostic, btnShareLog;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<String[]> found = new ArrayList<>();   // {nom, adresse}
@@ -90,6 +90,8 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         btnStopBridge = findViewById(R.id.btnStopBridge);
         btnSimulate = findViewById(R.id.btnSimulate);
         btnClear = findViewById(R.id.btnClear);
+        btnDiagnostic = findViewById(R.id.btnDiagnostic);
+        btnShareLog = findViewById(R.id.btnShareLog);
 
         BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         btAdapter = bm != null ? bm.getAdapter() : null;
@@ -154,6 +156,18 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
                 Logs.clear();
                 logBuffer.setLength(0);
                 logText.setText("");
+            }
+        });
+        btnDiagnostic.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showDiagnostic();
+            }
+        });
+        btnShareLog.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                shareLog();
             }
         });
 
@@ -448,6 +462,15 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
                         ? BridgeState.ringName : "connectée")
                 : (selectedName != null ? selectedName + " (sélectionnée)" : "aucune"))
                 + (BridgeState.ringBattery >= 0 ? " — " + BridgeState.ringBattery + " %" : ""));
+        if (!BridgeState.bridgeRunning) {
+            statusText.setTextColor(0xFF000000);
+        } else if (BridgeState.advertising) {
+            statusText.setTextColor(0xFF1B5E20);   // vert : publicité active
+        } else if (BridgeState.peripheralClients > 0) {
+            statusText.setTextColor(0xFF0D47A1);   // bleu : un client est connecté
+        } else {
+            statusText.setTextColor(0xFFB00020);   // rouge : publicité non active
+        }
         bridgeText.setText("Pont BLE : "
                 + (BridgeState.bridgeRunning ? "actif" : "arrêté")
                 + (BridgeState.advertising ? " • publicité 0x180D" : "")
@@ -455,6 +478,81 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
                         ? " • " + BridgeState.peripheralClients + " client(s)" : ""));
         btnStartBridge.setEnabled(true);
         btnStopBridge.setEnabled(BridgeState.bridgeRunning);
+    }
+
+    // ==================================================================
+    // Diagnostic et partage du journal
+    // ==================================================================
+
+    private String diagnosticText() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Bluetooth : ");
+        sb.append(btAdapter == null ? "absent" : (btAdapter.isEnabled() ? "activé" : "désactivé"));
+        sb.append('\n');
+        sb.append("Appareil : ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
+                .append(" (Android ").append(Build.VERSION.RELEASE).append(")\n");
+        if (btAdapter != null) {
+            try {
+                sb.append("Nom Bluetooth : ").append(btAdapter.getName()).append('\n');
+            } catch (SecurityException e) {
+                sb.append("Nom Bluetooth : (permission refusée)\n");
+            }
+            sb.append("Mode périphérique : ")
+                    .append(btAdapter.isMultipleAdvertisementSupported() ? "supporté" : "NON supporté")
+                    .append('\n');
+        }
+        sb.append("\nPermissions :\n");
+        sb.append("  BLUETOOTH_SCAN      : ").append(perm(Manifest.permission.BLUETOOTH_SCAN)).append('\n');
+        sb.append("  BLUETOOTH_CONNECT   : ").append(perm(Manifest.permission.BLUETOOTH_CONNECT)).append('\n');
+        sb.append("  BLUETOOTH_ADVERTISE : ").append(perm(Manifest.permission.BLUETOOTH_ADVERTISE)).append('\n');
+        sb.append("  POST_NOTIFICATIONS  : ").append(perm(Manifest.permission.POST_NOTIFICATIONS)).append('\n');
+        sb.append("\nPont : ").append(BridgeState.bridgeRunning ? "actif" : "arrêté").append('\n');
+        sb.append("Publicité BLE : ").append(BridgeState.advertising ? "ACTIVE" : "inactive").append('\n');
+        sb.append("Clients connectés : ").append(BridgeState.peripheralClients).append('\n');
+        sb.append("Source FC : ").append(BridgeState.source)
+                .append(" (").append(BridgeState.bpm > 0 ? BridgeState.bpm + " bpm" : "aucune valeur")
+                .append(")\n");
+        sb.append("Bague : ").append(BridgeState.ringConnected
+                ? ("connectée " + BridgeState.ringAddress) : "non connectée").append('\n');
+        return sb.toString();
+    }
+
+    private String perm(String permission) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return "accordée (API < 23)";
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+                        ? "accordée" : "REFUSÉE";
+            } catch (RuntimeException e) {
+                return "n/a";
+            }
+        }
+        return "n/a (Android < 12)";
+    }
+
+    private void showDiagnostic() {
+        String text = diagnosticText();
+        Logs.add("[diag] " + text.replace("\n", " | "));
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Diagnostic")
+                .setMessage(text)
+                .setPositiveButton(R.string.btn_ok, null)
+                .show();
+    }
+
+    private void shareLog() {
+        String body = diagnosticText() + "\n----- journal -----\n" + Logs.dump();
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_SUBJECT, "Journal QRing → Strava");
+        send.putExtra(Intent.EXTRA_TEXT, body);
+        try {
+            startActivity(Intent.createChooser(send, getString(R.string.share_title)));
+        } catch (RuntimeException e) {
+            Toast.makeText(this, "Aucune application pour partager", Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override

@@ -5,7 +5,7 @@
 fréquence cardiaque BLE standard, détectable par Strava
 **Emplacement :** `/home/user/Tomtom/qring-strava-bridge/` (dépôt `J055ELIN/Tomtom`,
 branche `arena/20770d9e-tomtom`)
-**APK :** `releases/QRingStravaBridge-v3.0.apk` — 37 415 octets, v1 + v2, minSdk 23, targetSdk 34
+**APK :** `releases/QRingStravaBridge-v3.1.apk` — 41 511 octets (v3.0 conservée à 37 415 octets), v1 + v2, minSdk 23, targetSdk 34
 
 ---
 
@@ -162,7 +162,7 @@ set_time = 012510201435000100000000000000A0
 ### 5.2 Reste à faire sur le Pixel 9a
 
 ```bash
-adb install -r qring-strava-bridge/releases/QRingStravaBridge-v3.0.apk
+adb install -r qring-strava-bridge/releases/QRingStravaBridge-v3.1.apk
 adb shell pm grant com.qring.strava.bridge android.permission.BLUETOOTH_SCAN
 adb shell pm grant com.qring.strava.bridge android.permission.BLUETOOTH_CONNECT
 adb shell pm grant com.qring.strava.bridge android.permission.BLUETOOTH_ADVERTISE

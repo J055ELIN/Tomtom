@@ -17,6 +17,8 @@ import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelUuid;
 
 import java.util.ArrayList;
@@ -158,6 +160,7 @@ public class HrmPeripheral {
 
     public void stop() {
         running = false;
+        advHandler.removeCallbacksAndMessages(null);
         stopAdvertising();
         if (server != null) {
             try {
@@ -237,9 +240,35 @@ public class HrmPeripheral {
 
     // ==================================================================
     // Publicité BLE
+    //
+    // Trois variantes sont essayées l'une après l'autre : certains téléphones
+    // refusent la publicité dès qu'elle dépasse 31 octets (UUID + nom), d'autres
+    // n'acceptent pas de scan response. En cas d'échec total, une nouvelle
+    // tentative est programmée toutes les 15 s (le pont GATT reste actif).
     // ==================================================================
 
+    private static final int ADVERTISE_RETRY_MS = 15000;
+
+    private final Handler advHandler = new Handler(Looper.getMainLooper());
+    private int advStrategy = 0;
+    private boolean advRetryScheduled = false;
+
+    private final Runnable advRetry = new Runnable() {
+        @Override
+        public void run() {
+            advRetryScheduled = false;
+            if (running && !advertised) {
+                log("Nouvelle tentative de publicité BLE…");
+                advStrategy = 0;
+                startAdvertising();
+            }
+        }
+    };
+
     private void startAdvertising() {
+        if (adapter == null) {
+            return;
+        }
         advertiser = adapter.getBluetoothLeAdvertiser();
         if (advertiser == null) {
             log("Publicité BLE non supportée par cet appareil (émulateur ?) — "
@@ -255,25 +284,60 @@ public class HrmPeripheral {
                 .setTimeout(0)
                 .build();
 
-        AdvertiseData data = new AdvertiseData.Builder()
-                .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
-                .setIncludeTxPowerLevel(false)
-                .build();
+        AdvertiseData data;
+        AdvertiseData scanResponse = null;
+        String label;
 
-        AdvertiseData scanResponse = new AdvertiseData.Builder()
-                .setIncludeDeviceName(true)
-                .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
-                .build();
+        switch (advStrategy) {
+            case 0:
+                // recommandé : UUID dans la publicité, nom dans la réponse de scan
+                data = new AdvertiseData.Builder()
+                        .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
+                        .setIncludeTxPowerLevel(false)
+                        .build();
+                if (!localName().isEmpty() && localName().length() <= 26) {
+                    scanResponse = new AdvertiseData.Builder()
+                            .setIncludeDeviceName(true)
+                            .build();
+                }
+                label = "UUID 0x180D + nom";
+                break;
+            case 1:
+                // certains scanners n'exploitent que la réponse de scan
+                data = new AdvertiseData.Builder()
+                        .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
+                        .build();
+                scanResponse = new AdvertiseData.Builder()
+                        .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
+                        .setIncludeDeviceName(true)
+                        .build();
+                label = "UUID dans publicité + réponse de scan";
+                break;
+            default:
+                // minimal : UUID seul, sans nom
+                data = new AdvertiseData.Builder()
+                        .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
+                        .build();
+                scanResponse = null;
+                label = "UUID seul";
+                break;
+        }
 
+        log("Publicité BLE : tentative « " + label + " »");
         try {
             advertiser.startAdvertising(settings, data, scanResponse, advertiseCallback);
         } catch (SecurityException e) {
             log("startAdvertising refusé (BLUETOOTH_ADVERTISE) : " + e.getMessage());
             listener.onAdvertisingStarted(false, "Permission BLUETOOTH_ADVERTISE manquante");
+        } catch (IllegalArgumentException e) {
+            log("startAdvertising invalide : " + e.getMessage());
+            nextStrategyOrRetry("paramètres refusés");
         }
     }
 
     private void stopAdvertising() {
+        advHandler.removeCallbacks(advRetry);
+        advRetryScheduled = false;
         if (advertiser != null) {
             try {
                 advertiser.stopAdvertising(advertiseCallback);
@@ -283,13 +347,35 @@ public class HrmPeripheral {
         advertised = false;
     }
 
+    private void nextStrategyOrRetry(String reason) {
+        advStrategy++;
+        if (advStrategy < 3) {
+            log("Publicité refusée (" + reason + ") → variante suivante");
+            startAdvertising();
+            return;
+        }
+        advStrategy = 0;
+        log("✘ Aucune variante de publicité acceptée (" + reason + ")");
+        listener.onAdvertisingStarted(false, reason);
+        scheduleAdvRetry();
+    }
+
+    private void scheduleAdvRetry() {
+        if (advRetryScheduled || !running) {
+            return;
+        }
+        advRetryScheduled = true;
+        advHandler.postDelayed(advRetry, ADVERTISE_RETRY_MS);
+    }
+
     private final AdvertiseCallback advertiseCallback = new AdvertiseCallback() {
         @Override
         public void onStartSuccess(AdvertiseSettings settingsInEffect) {
             advertised = true;
-            log("✔ Publicité BLE active — capteur FC 0x180D visible sous le nom Bluetooth du téléphone ("
-                    + localName() + ")");
-            listener.onAdvertisingStarted(true, "Publicité active");
+            log("✔ Publicité BLE active — capteur FC 0x180D visible sous le nom « "
+                    + localName() + " »");
+            log("   → dans Strava : Capteurs → Fréquence cardiaque → « " + localName() + " »");
+            listener.onAdvertisingStarted(true, "Publicité active (" + localName() + ")");
         }
 
         @Override
@@ -301,13 +387,13 @@ public class HrmPeripheral {
                     detail = "données de publicité trop volumineuses";
                     break;
                 case ADVERTISE_FAILED_TOO_MANY_ADVERTISERS:
-                    detail = "trop de publicités actives";
+                    detail = "trop de publicités actives (une autre app occupe la publicité BLE)";
                     break;
                 case ADVERTISE_FAILED_ALREADY_STARTED:
                     detail = "publicité déjà démarrée";
                     break;
                 case ADVERTISE_FAILED_INTERNAL_ERROR:
-                    detail = "erreur interne";
+                    detail = "erreur interne du Bluetooth";
                     break;
                 case ADVERTISE_FAILED_FEATURE_UNSUPPORTED:
                     detail = "non supporté par le matériel";
@@ -316,7 +402,17 @@ public class HrmPeripheral {
                     detail = "code " + errorCode;
             }
             log("✘ Publicité BLE en échec : " + detail);
-            listener.onAdvertisingStarted(false, detail);
+            if (errorCode == ADVERTISE_FAILED_ALREADY_STARTED) {
+                // une publicité existe déjà : on la considère comme active
+                advertised = true;
+                listener.onAdvertisingStarted(true, "publicité déjà active");
+                return;
+            }
+            if (errorCode == ADVERTISE_FAILED_FEATURE_UNSUPPORTED) {
+                listener.onAdvertisingStarted(false, detail);
+                return;
+            }
+            nextStrategyOrRetry(detail);
         }
     };
 
@@ -445,7 +541,19 @@ public class HrmPeripheral {
                 boolean enable = value != null && value.length > 0 && value[0] != 0x00;
                 if (enable) {
                     subscribed.add(k);
-                    log("Abonnement FC activé par " + device.getAddress());
+                    log("✔ Abonnement FC activé par " + device.getAddress()
+                            + " (une appli — Strava ? — vient de se connecter)");
+                    // envoie immédiatement la dernière valeur connue
+                    int bpm = BridgeState.bpm;
+                    if (bpm > 0) {
+                        byte[] hr = new byte[]{0x00, (byte) (bpm & 0xFF)};
+                        hrMeasurement.setValue(hr);
+                        try {
+                            server.notifyCharacteristicChanged(device, hrMeasurement, false);
+                            log("   → FC " + bpm + " bpm envoyée immédiatement");
+                        } catch (SecurityException ignored) {
+                        }
+                    }
                 } else {
                     subscribed.remove(k);
                     log("Abonnement FC désactivé par " + device.getAddress());
