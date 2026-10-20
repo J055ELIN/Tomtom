@@ -1,0 +1,35 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.qring.strava.bridge'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.qring.strava.bridge"
+        minSdk 23
+        targetSdk 34
+        versionCode 3
+        versionName "3.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // APK de production : signée avec la keystore de release si fournie,
+            // sinon debug (voir README).
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    // Aucune dépendance externe : 100 % framework Android.
+}

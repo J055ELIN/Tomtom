@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">QRing → Strava</string>
+    <string name="title">QRing → Strava HR Bridge</string>
+    <string name="subtitle">Bague Colmi/QRing → capteur FC BLE standard (0x180D)</string>
+
+    <string name="bpm_placeholder">--</string>
+    <string name="bpm_unit">bpm</string>
+    <string name="status_idle">Inactif</string>
+
+    <string name="btn_scan">Scanner</string>
+    <string name="btn_connect">Connecter la bague</string>
+    <string name="btn_stop_ring">Déconnecter</string>
+    <string name="btn_start_bridge">Démarrer le pont FC</string>
+    <string name="btn_stop_bridge">Arrêter le pont</string>
+    <string name="btn_simulate">Mode test (FC simulée)</string>
+    <string name="btn_clear">Effacer le journal</string>
+
+    <string name="label_ring">Bague : aucune</string>
+    <string name="label_bridge">Pont BLE : arrêté</string>
+    <string name="label_source">Source : —</string>
+
+    <string name="notif_channel">Pont FC actif</string>
+    <string name="notif_title">Pont FC QRing → BLE</string>
+    <string name="notif_text_idle">En attente de la bague…</string>
+</resources>
