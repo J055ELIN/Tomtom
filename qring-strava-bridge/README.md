@@ -1,4 +1,4 @@
-# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.1)
+# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.2)
 
 Transforme une bague **QRing / Colmi R0x** (R02, R03, R06, R10…) en **capteur de fréquence
 cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
@@ -8,7 +8,7 @@ cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
    (protocole 0x69)          rôle central + rôle GATT server        (0x180D / 0x2A37)
 ```
 
-* **APK prête à installer :** [`releases/QRingStravaBridge-v3.1.apk`](releases/QRingStravaBridge-v3.1.apk)
+* **APK prête à installer :** [`releases/QRingStravaBridge-v3.2.apk`](releases/QRingStravaBridge-v3.2.apk)
   (41 Ko, minSdk 23, targetSdk 34, signée debug v1 + v2).
 * **Aucune dépendance externe** : 100 % API Android, aucun Google Play Services.
 
@@ -36,7 +36,7 @@ depuis l'API 18**. Ce qui manquait dans l'ancienne version :
 ## 2. Installation
 
 ```bash
-adb install -r releases/QRingStravaBridge-v3.1.apk
+adb install -r releases/QRingStravaBridge-v3.2.apk
 ```
 
 Ou copier l'APK sur le téléphone et l'ouvrir (autoriser les sources inconnues).
@@ -67,7 +67,16 @@ Android 12+ demandera : **Appareils à proximité** (scan, connexion, **publicit
 Bouton **Mode test (FC simulée)** : le pont expose une FC sinusoïdale 62–158 bpm.
 Idéal pour vérifier la liaison avec Strava avant même d'avoir la bague.
 
-## 3 bis. La bannière de statut (v3.1)
+## 3 ter. Correctif v3.2 — pourquoi Strava ne voyait rien
+
+Android n'accepte **qu'un seul `addService()` à la fois** : il faut attendre le callback
+`onServiceAdded()` avant d'en ajouter un autre. La v3.1 en ajoutait trois d'un coup →
+aucun n'était réellement enregistré, donc Strava (qui se connectait bien, comme le
+montraient les journaux) ne trouvait aucun service `0x180D` et repartait sans s'abonner.
+La v3.2 les enregistre **en séquence**, puis démarre la publicité, et affiche
+« FC souscrite » dès qu'une application active réellement les notifications.
+
+## 3 bis. La bannière de statut (v3.2)
 
 Sous la valeur de FC, la ligne d'état est colorée :
 

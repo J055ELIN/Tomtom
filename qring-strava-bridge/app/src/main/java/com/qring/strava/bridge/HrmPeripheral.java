@@ -21,6 +21,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelUuid;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -54,6 +55,7 @@ public class HrmPeripheral {
     public static final UUID SVC_HEART_RATE = UUID.fromString("0000180D-0000-1000-8000-00805F9B34FB");
     public static final UUID CHAR_HR_MEASUREMENT = UUID.fromString("00002A37-0000-1000-8000-00805F9B34FB");
     public static final UUID CHAR_BODY_SENSOR_LOCATION = UUID.fromString("00002A38-0000-1000-8000-00805F9B34FB");
+    public static final UUID CHAR_HR_CONTROL_POINT = UUID.fromString("00002A39-0000-1000-8000-00805F9B34FB");
 
     public static final UUID SVC_BATTERY = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB");
     public static final UUID CHAR_BATTERY_LEVEL = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB");
@@ -85,6 +87,11 @@ public class HrmPeripheral {
 
     private volatile boolean running = false;
     private volatile boolean advertised = false;
+    private volatile boolean servicesReady = false;
+
+    private final ArrayDeque<BluetoothGattService> servicesToAdd = new ArrayDeque<>();
+    private BluetoothGattService pendingService;
+    private final Handler gattHandler = new Handler(Looper.getMainLooper());
 
     public HrmPeripheral(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -144,18 +151,75 @@ public class HrmPeripheral {
         }
 
         buildServices();
-        boolean ok = server.addService(hrService);
-        ok &= server.addService(batteryService);
-        ok &= server.addService(buildDeviceInfoService());
-        if (!ok) {
-            log("⚠ Au moins un service n'a pas pu être ajouté");
-        } else {
-            log("Serveur GATT prêt : FC 0x180D, batterie 0x180F, infos 0x180A");
-        }
-
         running = true;
-        startAdvertising();
+        // ⚠ Android n'accepte qu'UN SEUL addService à la fois : il faut attendre
+        // le callback onServiceAdded() avant d'ajouter le suivant, sinon les
+        // services ne sont jamais enregistrés (un client connecté ne voit alors
+        // aucun service — c'était la cause du « Strava ne trouve pas le capteur »).
+        servicesToAdd.clear();
+        servicesToAdd.add(hrService);
+        servicesToAdd.add(batteryService);
+        servicesToAdd.add(buildDeviceInfoService());
+        addNextService();
         return true;
+    }
+
+    // ==================================================================
+    // Enregistrement séquentiel des services GATT
+    // ==================================================================
+
+    private void addNextService() {
+        if (server == null) {
+            return;
+        }
+        BluetoothGattService next = servicesToAdd.poll();
+        if (next == null) {
+            servicesReady = true;
+            log("✔ Serveur GATT prêt : services FC 0x180D + batterie 0x180F + infos 0x180A enregistrés");
+            if (!advertised) {
+                startAdvertising();
+            }
+            return;
+        }
+        pendingService = next;
+        log("Enregistrement du service " + shortUuid(next.getUuid()) + "…");
+        boolean initiated;
+        try {
+            initiated = server.addService(next);
+        } catch (SecurityException e) {
+            initiated = false;
+            log("addService refusé : " + e.getMessage());
+        }
+        if (!initiated) {
+            log("⚠ addService a échoué pour " + shortUuid(next.getUuid()));
+            pendingService = null;
+            addNextService();
+            return;
+        }
+        // filet de sécurité : si le callback n'arrive pas (pile Bluetooth
+        // capricieuse), on continue quand même au bout de 3 s.
+        gattHandler.removeCallbacks(serviceTimeout);
+        gattHandler.postDelayed(serviceTimeout, 3000L);
+    }
+
+    private final Runnable serviceTimeout = new Runnable() {
+        @Override
+        public void run() {
+            if (pendingService != null) {
+                log("⚠ Pas de confirmation du système pour le service "
+                        + shortUuid(pendingService.getUuid()) + " (3 s) — on continue");
+                pendingService = null;
+                addNextService();
+            }
+        }
+    };
+
+    private static String shortUuid(UUID uuid) {
+        String s = uuid.toString().toUpperCase(Locale.US);
+        if (s.startsWith("0000") && s.endsWith("-0000-1000-8000-00805F9B34FB")) {
+            return "0x" + s.substring(4, 8);
+        }
+        return s;
     }
 
     public void stop() {
@@ -172,6 +236,11 @@ public class HrmPeripheral {
         }
         clients.clear();
         subscribed.clear();
+        servicesToAdd.clear();
+        pendingService = null;
+        servicesReady = false;
+        gattHandler.removeCallbacksAndMessages(null);
+        BridgeState.subscribed = false;
         listener.onClientCountChanged(0);
         log("Serveur GATT arrêté");
     }
@@ -184,10 +253,13 @@ public class HrmPeripheral {
         hrService = new BluetoothGattService(SVC_HEART_RATE,
                 BluetoothGattService.SERVICE_TYPE_PRIMARY);
 
+        // READ en plus de NOTIFY : certaines applications (dont Strava) lisent la
+        // dernière valeur avant de s'abonner.
         hrMeasurement = new BluetoothGattCharacteristic(
                 CHAR_HR_MEASUREMENT,
-                BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-                0);
+                BluetoothGattCharacteristic.PROPERTY_READ
+                        | BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+                BluetoothGattCharacteristic.PERMISSION_READ);
         hrMeasurement.addDescriptor(cccd());
         hrMeasurement.setValue(new byte[]{0x00, 0x00});
         hrService.addCharacteristic(hrMeasurement);
@@ -199,6 +271,13 @@ public class HrmPeripheral {
                 BluetoothGattCharacteristic.PERMISSION_READ);
         bodySensorLocation.setValue(new byte[]{0x03});
         hrService.addCharacteristic(bodySensorLocation);
+
+        BluetoothGattCharacteristic controlPoint = new BluetoothGattCharacteristic(
+                CHAR_HR_CONTROL_POINT,
+                BluetoothGattCharacteristic.PROPERTY_WRITE,
+                BluetoothGattCharacteristic.PERMISSION_WRITE);
+        controlPoint.setValue(new byte[]{0x00});
+        hrService.addCharacteristic(controlPoint);
 
         batteryService = new BluetoothGattService(SVC_BATTERY,
                 BluetoothGattService.SERVICE_TYPE_PRIMARY);
@@ -487,7 +566,14 @@ public class HrmPeripheral {
 
         @Override
         public void onServiceAdded(int status, BluetoothGattService service) {
-            log("Service ajouté : " + service.getUuid() + " (status=" + status + ")");
+            gattHandler.removeCallbacks(serviceTimeout);
+            pendingService = null;
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                log("✔ Service enregistré : " + shortUuid(service.getUuid()));
+            } else {
+                log("✘ Service refusé : " + shortUuid(service.getUuid()) + " (status=" + status + ")");
+            }
+            addNextService();
         }
 
         @Override
@@ -497,6 +583,7 @@ public class HrmPeripheral {
             if (value == null) {
                 value = new byte[]{0};
             }
+            log("Lecture " + shortUuid(characteristic.getUuid()) + " par " + device.getAddress());
             try {
                 server.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset,
                         slice(value, offset));
@@ -541,6 +628,8 @@ public class HrmPeripheral {
                 boolean enable = value != null && value.length > 0 && value[0] != 0x00;
                 if (enable) {
                     subscribed.add(k);
+                    BridgeState.subscribed = true;
+                    BridgeState.notifyListeners();
                     log("✔ Abonnement FC activé par " + device.getAddress()
                             + " (une appli — Strava ? — vient de se connecter)");
                     // envoie immédiatement la dernière valeur connue
@@ -556,6 +645,8 @@ public class HrmPeripheral {
                     }
                 } else {
                     subscribed.remove(k);
+                    BridgeState.subscribed = !subscribed.isEmpty();
+                    BridgeState.notifyListeners();
                     log("Abonnement FC désactivé par " + device.getAddress());
                 }
             }

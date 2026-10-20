@@ -22,6 +22,7 @@ public final class BridgeState {
     public static volatile boolean advertising = false;
     public static volatile boolean simulating = false;
     public static volatile int peripheralClients = 0;
+    public static volatile boolean subscribed = false;
     public static volatile String ringName = "";
     public static volatile String ringAddress = "";
     public static volatile String status = "Inactif";

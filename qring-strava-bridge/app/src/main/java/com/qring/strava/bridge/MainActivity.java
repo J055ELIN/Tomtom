@@ -475,7 +475,8 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
                 + (BridgeState.bridgeRunning ? "actif" : "arrêté")
                 + (BridgeState.advertising ? " • publicité 0x180D" : "")
                 + (BridgeState.peripheralClients > 0
-                        ? " • " + BridgeState.peripheralClients + " client(s)" : ""));
+                        ? " • " + BridgeState.peripheralClients + " client(s)" : "")
+                + (BridgeState.subscribed ? " • FC souscrite" : ""));
         btnStartBridge.setEnabled(true);
         btnStopBridge.setEnabled(BridgeState.bridgeRunning);
     }
@@ -509,6 +510,8 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         sb.append("\nPont : ").append(BridgeState.bridgeRunning ? "actif" : "arrêté").append('\n');
         sb.append("Publicité BLE : ").append(BridgeState.advertising ? "ACTIVE" : "inactive").append('\n');
         sb.append("Clients connectés : ").append(BridgeState.peripheralClients).append('\n');
+        sb.append("Abonnement FC (notifications) : ")
+                .append(BridgeState.subscribed ? "OUI — une appli reçoit la FC" : "non").append('\n');
         sb.append("Source FC : ").append(BridgeState.source)
                 .append(" (").append(BridgeState.bpm > 0 ? BridgeState.bpm + " bpm" : "aucune valeur")
                 .append(")\n");
