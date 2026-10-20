@@ -276,9 +276,12 @@ public class RingBleClient {
                 }
                 if (reconnectEnabled && device != null) {
                     log("Reconnexion automatique dans 4 s…");
-                    handler.postDelayed(() -> {
-                        if (reconnectEnabled && !connected) {
-                            connect(device, true);
+                    handler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (reconnectEnabled && !connected) {
+                                connect(device, true);
+                            }
                         }
                     }, 4000L);
                 }

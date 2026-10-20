@@ -1,0 +1,171 @@
+# ⚠️ CE FICHIER DOIT ÊTRE COPIÉ DANS .github/workflows/qring-strava-bridge-build.yml
+#    (le jeton de cette session n'a pas la permission « workflows »).
+#    Il compile l'APK avec Gradle puis la teste sur émulateurs API 30 et 33.
+
+# ============================================================================
+# QRing → Strava HR Bridge : compilation + test sur émulateur Android
+#
+#  - job « build »    : compile l'APK debug avec Gradle (JDK 17, SDK 34)
+#  - job « emulateur »: installe l'APK sur un émulateur API 30 et API 33,
+#                       lance le mode test (FC simulée), vérifie qu'aucun crash
+#                       n'apparaît et que la FC s'affiche, récupère captures + logs
+# ============================================================================
+name: QRing Strava Bridge — build & test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+    paths:
+      - 'qring-strava-bridge/**'
+      - '.github/workflows/qring-strava-bridge-build.yml'
+
+jobs:
+  build:
+    name: Compilation de l'APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Compilation (assembleDebug)
+        working-directory: qring-strava-bridge
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Infos APK
+        working-directory: qring-strava-bridge
+        run: |
+          ls -l app/build/outputs/apk/debug/
+          "${ANDROID_HOME}/build-tools/34.0.0/aapt" dump badging \
+            app/build/outputs/apk/debug/app-debug.apk | head -5 || true
+
+      - name: Publier l'APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: qring-apk
+          path: qring-strava-bridge/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  emulateur:
+    name: Test sur émulateur Android ${{ matrix.api-level }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [30, 33]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Télécharger l'APK
+        uses: actions/download-artifact@v4
+        with:
+          name: qring-apk
+          path: apk
+
+      - name: Activer KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Émulateur + test du mode simulation
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: google_apis
+          profile: pixel_4
+          emulator-options: -no-snapshot -noaudio -no-boot-anim -no-window -gpu swiftshader_indirect
+          disable-animations: true
+          script: |
+            set -x
+            adb wait-for-device
+            sleep 5
+            adb install -r apk/app-debug.apk || exit 1
+
+            PKG=com.qring.strava.bridge
+            adb shell pm grant $PKG android.permission.BLUETOOTH_SCAN || true
+            adb shell pm grant $PKG android.permission.BLUETOOTH_CONNECT || true
+            adb shell pm grant $PKG android.permission.BLUETOOTH_ADVERTISE || true
+            adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS || true
+            adb shell pm grant $PKG android.permission.ACCESS_FINE_LOCATION || true
+
+            adb logcat -c
+            adb shell am start -n $PKG/.MainActivity --ez simulate true
+            sleep 22
+
+            echo "=== Processus vivant ? ==="
+            adb shell pidof $PKG || { echo "PROCESS MORT"; exit 1; }
+
+            echo "=== UI (1re capture) ==="
+            adb shell uiautomator dump /sdcard/ui1.xml >/dev/null 2>&1
+            adb pull /sdcard/ui1.xml ui1.xml >/dev/null 2>&1 || true
+            adb exec-out screencap -p > ecran_simulation_1.png || true
+            grep -oE 'text="[^"]*"' ui1.xml | head -25 || true
+
+            sleep 6
+            adb shell uiautomator dump /sdcard/ui2.xml >/dev/null 2>&1
+            adb pull /sdcard/ui2.xml ui2.xml >/dev/null 2>&1 || true
+            adb exec-out screencap -p > ecran_simulation_2.png || true
+
+            adb logcat -d > logcat.txt
+            adb shell dumpsys notification --noredact > notifs.txt 2>/dev/null || true
+
+            echo "=== Recherche de crash ==="
+            if grep -q "FATAL EXCEPTION" logcat.txt; then
+              echo "CRASH DETECTE"
+              grep -A 25 "FATAL EXCEPTION" logcat.txt
+              exit 1
+            fi
+            echo "Aucun crash."
+
+            echo "=== FC affichée ? ==="
+            python3 - <<'PY'
+            import re, sys
+            def texts(path):
+                try:
+                    return re.findall(r'text="([^"]*)"', open(path, encoding='utf-8', errors='ignore').read())
+                except FileNotFoundError:
+                    return []
+            t1, t2 = texts('ui1.xml'), texts('ui2.xml')
+            print("UI1:", t1[:12])
+            print("UI2:", t2[:12])
+            bpm = [t for t in t1 + t2 if re.fullmatch(r'\d{2,3}', t.strip())]
+            print("valeurs numériques détectées:", bpm)
+            if not bpm:
+                print("ECHEC: aucune FC affichée (le mode simulation n'a pas alimenté l'UI)")
+                sys.exit(1)
+            if not any('simulation' in t.lower() for t in t1 + t2):
+                print("ECHEC: source 'simulation' absente de l'UI")
+                sys.exit(1)
+            print("OK: FC simulée affichée =", bpm[0])
+            PY
+
+      - name: Artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qring-test-api${{ matrix.api-level }}
+          path: |
+            ui1.xml
+            ui2.xml
+            ecran_simulation_1.png
+            ecran_simulation_2.png
+            logcat.txt
+            notifs.txt
+          if-no-files-found: warn

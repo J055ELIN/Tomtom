@@ -35,7 +35,7 @@ public final class Logs {
     }
 
     public static void add(String message) {
-        String line = FMT.format(new Date()) + "  " + message;
+        final String line = FMT.format(new Date()) + "  " + message;
         synchronized (LINES) {
             LINES.addLast(line);
             while (LINES.size() > MAX_LINES) {
@@ -43,9 +43,12 @@ public final class Logs {
             }
         }
         Log.i(TAG, message);
-        MAIN.post(() -> {
-            for (Listener l : LISTENERS) {
-                l.onLogLine(line);
+        MAIN.post(new Runnable() {
+            @Override
+            public void run() {
+                for (Listener l : LISTENERS) {
+                    l.onLogLine(line);
+                }
             }
         });
     }
@@ -70,9 +73,12 @@ public final class Logs {
         synchronized (LINES) {
             LINES.clear();
         }
-        MAIN.post(() -> {
-            for (Listener l : LISTENERS) {
-                l.onLogLine("");
+        MAIN.post(new Runnable() {
+            @Override
+            public void run() {
+                for (Listener l : LISTENERS) {
+                    l.onLogLine("");
+                }
             }
         });
     }

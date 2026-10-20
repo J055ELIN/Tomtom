@@ -21,6 +21,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelUuid;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
@@ -99,25 +100,61 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
 
         listAdapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
         deviceList.setAdapter(listAdapter);
-        deviceList.setOnItemClickListener((parent, view, position, id) -> {
-            if (position < found.size()) {
-                selectedName = found.get(position)[0];
-                selectedAddress = found.get(position)[1];
-                updateUi();
-                Logs.add("[ui] sélection : " + selectedName + " [" + selectedAddress + "]");
+        deviceList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                if (position < found.size()) {
+                    selectedName = found.get(position)[0];
+                    selectedAddress = found.get(position)[1];
+                    updateUi();
+                    Logs.add("[ui] sélection : " + selectedName + " [" + selectedAddress + "]");
+                }
             }
         });
 
-        btnScan.setOnClickListener(v -> toggleScan());
-        btnConnect.setOnClickListener(v -> connectRing());
-        btnDisconnect.setOnClickListener(v -> stopBridge());
-        btnStartBridge.setOnClickListener(v -> startBridge(selectedAddress, selectedName, false));
-        btnStopBridge.setOnClickListener(v -> stopBridge());
-        btnSimulate.setOnClickListener(v -> startBridge(null, null, true));
-        btnClear.setOnClickListener(v -> {
-            Logs.clear();
-            logBuffer.setLength(0);
-            logText.setText("");
+        btnScan.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleScan();
+            }
+        });
+        btnConnect.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                connectRing();
+            }
+        });
+        btnDisconnect.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                stopBridge();
+            }
+        });
+        btnStartBridge.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startBridge(selectedAddress, selectedName, false);
+            }
+        });
+        btnStopBridge.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                stopBridge();
+            }
+        });
+        btnSimulate.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startBridge(null, null, true);
+            }
+        });
+        btnClear.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Logs.clear();
+                logBuffer.setLength(0);
+                logText.setText("");
+            }
         });
 
         Logs.addListener(this);
@@ -127,7 +164,12 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
 
         if (getIntent() != null && getIntent().getBooleanExtra("simulate", false)) {
             Logs.add("[ui] lancement automatique du mode simulation (test)");
-            handler.postDelayed(() -> startBridge(null, null, true), 800L);
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    startBridge(null, null, true);
+                }
+            }, 800L);
         }
     }
 
@@ -232,7 +274,12 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
             scanning = true;
             btnScan.setText("Stop scan");
             Logs.add("[ui] scan BLE démarré (20 s)");
-            handler.postDelayed(this::stopScan, 20000L);
+            handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                stopScan();
+            }
+        }, 20000L);
         } catch (SecurityException e) {
             Logs.add("[ui] scan refusé : " + e.getMessage());
         }
@@ -426,6 +473,11 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
             logBuffer.append(line).append('\n');
         }
         logText.setText(logBuffer.toString());
-        logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
+        logScroll.post(new Runnable() {
+            @Override
+            public void run() {
+                logScroll.fullScroll(View.FOCUS_DOWN);
+            }
+        });
     }
 }

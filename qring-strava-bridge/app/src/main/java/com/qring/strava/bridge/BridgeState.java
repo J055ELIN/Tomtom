@@ -54,9 +54,12 @@ public final class BridgeState {
     }
 
     public static void notifyListeners() {
-        MAIN.post(() -> {
-            for (Listener l : LISTENERS) {
-                l.onBridgeStateChanged();
+        MAIN.post(new Runnable() {
+            @Override
+            public void run() {
+                for (Listener l : LISTENERS) {
+                    l.onBridgeStateChanged();
+                }
             }
         });
     }
