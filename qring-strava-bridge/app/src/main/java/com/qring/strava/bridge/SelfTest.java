@@ -60,12 +60,9 @@ public class SelfTest {
     private int descriptorStatus = -1;
     private boolean descriptorWritten = false;
 
-<<<<<<< HEAD
-=======
     private String localName = "";
     private final java.util.LinkedHashSet<String> census = new java.util.LinkedHashSet<>();
 
->>>>>>> 27d0d3b (QRing v3.4: autotest ciblé sur notre propre publicité (ignore les ceintures voisines) + keystore de debug versionnée pour des MAJ installables)
     public SelfTest(Context context, Callback callback) {
         this.context = context.getApplicationContext();
         this.callback = callback;
@@ -81,8 +78,6 @@ public class SelfTest {
             finish(false, "Bluetooth désactivé");
             return;
         }
-<<<<<<< HEAD
-=======
         try {
             localName = bm.getAdapter().getName();
         } catch (SecurityException e) {
@@ -91,17 +86,12 @@ public class SelfTest {
         if (localName == null) {
             localName = "";
         }
->>>>>>> 27d0d3b (QRing v3.4: autotest ciblé sur notre propre publicité (ignore les ceintures voisines) + keystore de debug versionnée pour des MAJ installables)
         scanner = bm.getAdapter().getBluetoothLeScanner();
         if (scanner == null) {
             finish(false, "Scanner BLE indisponible");
             return;
         }
-<<<<<<< HEAD
-        step("1/4  Recherche de notre propre publicité (0x180D)…");
-=======
         step("1/4  Recherche de notre propre publicité (0x180D, nom « " + localName + " »)…");
->>>>>>> 27d0d3b (QRing v3.4: autotest ciblé sur notre propre publicité (ignore les ceintures voisines) + keystore de debug versionnée pour des MAJ installables)
         try {
             ScanSettings settings = new ScanSettings.Builder()
                     .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -115,13 +105,8 @@ public class SelfTest {
             @Override
             public void run() {
                 if (!finished && !advSeen) {
-<<<<<<< HEAD
-                    finish(false, "Publicité invisible en 12 s : le téléphone ne se voit pas lui-même "
-                            + "annoncer 0x180D (publicité BLE non fonctionnelle sur ce modèle)");
-=======
                     finish(false, "Aucune publicité 0x180D au nom « " + localName
                             + " » vue en 12 s. Appareils 0x180D entendus : " + censusSummary());
->>>>>>> 27d0d3b (QRing v3.4: autotest ciblé sur notre propre publicité (ignore les ceintures voisines) + keystore de debug versionnée pour des MAJ installables)
                 }
             }
         }, 12000L);
@@ -164,8 +149,6 @@ public class SelfTest {
         callback.onFinished(ok, verdict);
     }
 
-<<<<<<< HEAD
-=======
     private String censusSummary() {
         if (census.isEmpty()) {
             return "aucun (rien n'annonce 0x180D autour de vous)";
@@ -185,7 +168,6 @@ public class SelfTest {
         return sb.toString();
     }
 
->>>>>>> 27d0d3b (QRing v3.4: autotest ciblé sur notre propre publicité (ignore les ceintures voisines) + keystore de debug versionnée pour des MAJ installables)
     private void step(String message) {
         if (!finished) {
             callback.onStep(message);
@@ -225,17 +207,6 @@ public class SelfTest {
             }
         }
         String name = record != null ? record.getDeviceName() : null;
-<<<<<<< HEAD
-        if (!hasHrUuid && name == null) {
-            return;
-        }
-        if (!hasHrUuid) {
-            return; // ce n'est pas nous
-        }
-
-        advSeen = true;
-        step("2/4  Publicité détectée : « " + name + " » annonce bien 0x180D ("
-=======
         if (!hasHrUuid) {
             return;
         }
@@ -254,7 +225,6 @@ public class SelfTest {
 
         advSeen = true;
         step("2/4  Notre publicité détectée : « " + name + " » annonce 0x180D ("
->>>>>>> 27d0d3b (QRing v3.4: autotest ciblé sur notre propre publicité (ignore les ceintures voisines) + keystore de debug versionnée pour des MAJ installables)
                 + result.getRssi() + " dBm) → connexion…");
         try {
             scanner.stopScan(scanCallback);

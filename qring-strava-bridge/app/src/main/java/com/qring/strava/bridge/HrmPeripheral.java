@@ -565,9 +565,6 @@ public class HrmPeripheral {
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 clients.add(device);
-<<<<<<< HEAD
-                log("Central BLE connecté : " + device.getAddress()
-=======
                 String cname;
                 try {
                     cname = device.getName();
@@ -576,7 +573,6 @@ public class HrmPeripheral {
                 }
                 log("Central BLE connecté : " + device.getAddress()
                         + (cname != null ? " (« " + cname + " »)" : "")
->>>>>>> 27d0d3b (QRing v3.4: autotest ciblé sur notre propre publicité (ignore les ceintures voisines) + keystore de debug versionnée pour des MAJ installables)
                         + " (" + clients.size() + " client(s))");
                 if (!servicesReady) {
                     // Un client qui se connecte avant l'enregistrement des services
