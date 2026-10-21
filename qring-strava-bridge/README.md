@@ -94,6 +94,32 @@ Pixel. Deux usages possibles :
 | Pont + **Strava sur le même téléphone** | ❌ impossible par BLE |
 | Pont + **export TCX importé dans Strava (même téléphone)** | ✅ oui → voir ci-dessous |
 
+## 3 undecies. LA configuration qui donne la FC EN DIRECT dans Strava
+
+Objectif : FC vivante pendant l'effort **et** carte, routes et segments habituels.
+Seule combinaison qui le permet (prouvée le 21/10) : **deux téléphones**.
+
+| Téléphone | Rôle | Écran |
+|---|---|---|
+| **A** (n'importe lequel, poche/sac) | Pont QRing : appli lancée, bague connectée, FC affichée | peut rester éteint |
+| **B** (le tien, sur le guidon) | **Strava** : capteur « QRing HR » + GPS + segments | allumé, comme d'habitude |
+
+Mise en place, une seule fois :
+1. Sur A : appli QRing → **Connecter la bague** → attendre `FC xx bpm` → **Démarrer le pont**.
+2. Sur B : Strava → **Enregistrer** → icône **cœur** (capteurs) → choisir **QRing HR** →
+   la FC apparaît en direct. Lancer l'activité normalement.
+
+Règles à respecter :
+* A doit rester à portée (≤ 10 m) et son Bluetooth actif ; la notification « pont actif »
+  doit rester visible (sinon Android endort l'appli : désactiver l'optimisation de batterie
+  pour QRing HR Bridge).
+* Ne pas lancer l'appli QRing sur B : il ne doit y avoir qu'un seul pont à la fois.
+* Un capteur BLE ne se connecte qu'à **une** application : si la FC se fige, fermer
+  l'éventuelle autre appli (montre, appli constructeur) qui aurait pris la bague.
+
+Sans second téléphone, il reste l'export TCX (section 3 decies) : tout est dans Strava
+après coup (carte + FC + segments), mais pas de FC affichée pendant l'effort.
+
 ## 3 decies. v3.8 — enregistrement de séance + export TCX (un seul téléphone)
 
 Pendant que le pont tourne, l'application enregistre **la FC (1 point/s) et la trace
