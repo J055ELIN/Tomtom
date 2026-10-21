@@ -223,6 +223,17 @@ public class HrmPeripheral {
         }
     };
 
+    private static String hexBytes(byte[] data) {
+        if (data == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (byte b : data) {
+            sb.append(String.format(Locale.US, "%02X ", b & 0xFF));
+        }
+        return sb.toString().trim();
+    }
+
     private static String shortUuid(UUID uuid) {
         String s = uuid.toString().toUpperCase(Locale.US);
         if (s.startsWith("0000") && s.endsWith("-0000-1000-8000-00805F9B34FB")) {
@@ -401,14 +412,27 @@ public class HrmPeripheral {
         AdvertiseData scanResponse = null;
         String label;
 
-        // Structure calquée sur une vraie ceinture (Polar H10) :
-        //   UUID 0x180D + 0x180F + nom complet, dans le paquet principal.
+        // Réplique exacte de ce qu'émettent les ceintures FUSE (relevé nRF Connect) :
+        //   02 01 06              flags (LE General Discoverable, BR/EDR not supported)
+        //   03 03 0D 18           liste complète des UUID 16 bits = 0x180D
+        //   0A 09 51 52 69 6E 67 20 48 52   nom complet « QRing HR »
         final byte[] hrServiceData = new byte[]{0x00, (byte) (BridgeState.bpm > 0
                 ? Math.min(BridgeState.bpm, 255) : 0)};
 
         switch (advStrategy) {
             case 0:
-                // Polar-like : 0x180D + 0x180F + nom
+                // structure identique à NEW-FUSE / Joss-FUSE : 0x180D + nom
+                data = new AdvertiseData.Builder()
+                        .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
+                        .setIncludeDeviceName(true)
+                        .setIncludeTxPowerLevel(false)
+                        .build();
+                scanResponse = null;
+                label = "0x180D + nom (comme les ceintures FUSE)";
+                log("   trame visée : 02 01 06 03 03 0D 18 <nom> " + hexBytes(localName().getBytes()));
+                break;
+            case 1:
+                // + batterie 0x180F
                 data = new AdvertiseData.Builder()
                         .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
                         .addServiceUuid(new ParcelUuid(SVC_BATTERY))
@@ -416,22 +440,21 @@ public class HrmPeripheral {
                         .setIncludeTxPowerLevel(false)
                         .build();
                 scanResponse = null;
-                label = "0x180D + 0x180F + nom (type ceinture Polar)";
+                label = "0x180D + 0x180F + nom";
                 break;
-            case 1:
-                // + service data 0x180D (flags + bpm), comme le font certaines ceintures
+            case 2:
+                // + service data 0x180D (flags + bpm)
                 data = new AdvertiseData.Builder()
                         .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
-                        .addServiceUuid(new ParcelUuid(SVC_BATTERY))
                         .addServiceData(new ParcelUuid(SVC_HEART_RATE), hrServiceData)
                         .setIncludeDeviceName(true)
                         .setIncludeTxPowerLevel(false)
                         .build();
                 scanResponse = null;
-                label = "0x180D + 0x180F + serviceData FC + nom";
+                label = "0x180D + serviceData FC + nom";
                 break;
-            case 2:
-                // UUID seul dans la publicité, nom dans la réponse de scan
+            case 3:
+                // nom uniquement en réponse de scan
                 data = new AdvertiseData.Builder()
                         .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
                         .build();
