@@ -1,4 +1,4 @@
-# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.6)
+# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.7)
 
 Transforme une bague **QRing / Colmi R0x** (R02, R03, R06, R10…) en **capteur de fréquence
 cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
@@ -8,7 +8,7 @@ cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
    (protocole 0x69)          rôle central + rôle GATT server        (0x180D / 0x2A37)
 ```
 
-* **APK prête à installer :** [`releases/QRingStravaBridge-v3.6.apk`](releases/QRingStravaBridge-v3.6.apk)
+* **APK prête à installer :** [`releases/QRingStravaBridge-v3.7.apk`](releases/QRingStravaBridge-v3.7.apk)
   (41 Ko, minSdk 23, targetSdk 34, signée debug v1 + v2).
 * **Aucune dépendance externe** : 100 % API Android, aucun Google Play Services.
 
@@ -36,7 +36,7 @@ depuis l'API 18**. Ce qui manquait dans l'ancienne version :
 ## 2. Installation
 
 ```bash
-adb install -r releases/QRingStravaBridge-v3.6.apk
+adb install -r releases/QRingStravaBridge-v3.7.apk
 ```
 
 Ou copier l'APK sur le téléphone et l'ouvrir (autoriser les sources inconnues).
@@ -75,6 +75,21 @@ aucun n'était réellement enregistré, donc Strava (qui se connectait bien, com
 montraient les journaux) ne trouvait aucun service `0x180D` et repartait sans s'abonner.
 La v3.2 les enregistre **en séquence**, puis démarre la publicité, et affiche
 « FC souscrite » dès qu'une application active réellement les notifications.
+
+## 3 octies. v3.7 — réplique exacte de la trame des ceintures FUSE
+
+Les trames de vos ceintures, relevées par nRF Connect, sont :
+
+```
+02 01 06                          flags
+03 03 0D 18                       liste complète des UUID 16 bits = 0x180D
+0A 09 51 52 69 6E 67 ...          nom complet « Joss-FUSE » / « NEW-FUSE »
+07 FF 89 01 ...                   (optionnel) données fabricant
+```
+
+La v3.7 émet la même structure (variante 1 = `0x180D` + nom, sans données
+fabricant) et affiche dans le journal la **trame visée en hexadécimal** afin de
+pouvoir la comparer directement à celle des ceintures.
 
 ## 3 septies. v3.6 — publicité calquée sur une vraie ceinture
 
@@ -124,7 +139,7 @@ journalise au passage tous les appareils `0x180D` entendus.
 > (l'application ne peut pas être remplacée par une APK signée avec une autre clé) ;
 > les versions suivantes s'installeront par-dessus.
 
-## 3 quater. Autotest BLE (v3.6)
+## 3 quater. Autotest BLE (v3.7)
 
 Bouton **« Autotest BLE (pont → capteur) »** : le téléphone se teste lui-même, sans
 application tierce.
@@ -142,7 +157,7 @@ Verdict affiché dans une boîte de dialogue et consigné dans le journal :
 | « service 0x180D ABSENT » | la base GATT n'a pas été publiée correctement (le message liste les services vus) |
 | « aucune mesure reçue » | l'abonnement est accepté mais aucune FC n'est poussée (vérifier que le mode test est actif) |
 
-## 3 bis. La bannière de statut (v3.6)
+## 3 bis. La bannière de statut (v3.7)
 
 Sous la valeur de FC, la ligne d'état est colorée :
 
