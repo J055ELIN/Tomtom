@@ -161,6 +161,45 @@ public class SelfTest {
         callback.onFinished(ok, verdict);
     }
 
+    private static String hex(byte[] data) {
+        if (data == null) {
+            return "(vide)";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < data.length && i < 62; i++) {
+            sb.append(String.format(Locale.US, "%02X ", data[i] & 0xFF));
+        }
+        return sb.toString().trim();
+    }
+
+    private static String uuidList(ScanRecord record) {
+        if (record == null || record.getServiceUuids() == null || record.getServiceUuids().isEmpty()) {
+            return "aucun";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (ParcelUuid u : record.getServiceUuids()) {
+            if (sb.length() > 0) {
+                sb.append(", ");
+            }
+            sb.append(shortUuid(u.getUuid()));
+        }
+        return sb.toString();
+    }
+
+    private static String serviceData(ScanRecord record) {
+        if (record == null || record.getServiceData() == null || record.getServiceData().isEmpty()) {
+            return "aucune";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (java.util.Map.Entry<ParcelUuid, byte[]> e : record.getServiceData().entrySet()) {
+            if (sb.length() > 0) {
+                sb.append(", ");
+            }
+            sb.append(shortUuid(e.getKey().getUuid())).append('=').append(hex(e.getValue()));
+        }
+        return sb.toString();
+    }
+
     private String censusSummary() {
         if (censusByName.isEmpty()) {
             return "aucun (rien n'annonce 0x180D autour de vous)";
@@ -228,6 +267,13 @@ public class SelfTest {
         if (previous == null) {
             censusByName.put(who, label);
             callback.onStep("   vu : " + label);
+            if (record != null) {
+                // trame publicitaire complète : sert de référence pour reproduire
+                // à l'identique ce qu'une ceinture "reconnue" émet
+                callback.onStep("      publicité : " + hex(record.getBytes()));
+                callback.onStep("      services : " + uuidList(record)
+                        + ", serviceData : " + serviceData(record));
+            }
         } else {
             censusByName.put(who, label);
         }

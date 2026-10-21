@@ -336,10 +336,35 @@ public class HrmPeripheral {
     // ==================================================================
 
     private static final int ADVERTISE_RETRY_MS = 15000;
+    private static final int ADVERTISE_REFRESH_MS = 60000;
 
     private final Handler advHandler = new Handler(Looper.getMainLooper());
     private int advStrategy = 0;
     private boolean advRetryScheduled = false;
+
+    private final Runnable advRefresh = new Runnable() {
+        @Override
+        public void run() {
+            if (!running) {
+                return;
+            }
+            // relance la publicité régulièrement : certains contrôleurs l'arrêtent
+            // silencieusement au bout d'un moment
+            if (advertised) {
+                try {
+                    if (advertiser != null) {
+                        advertiser.stopAdvertising(advertiseCallback);
+                    }
+                } catch (SecurityException ignored) {
+                }
+                advertised = false;
+                log("Rafraîchissement de la publicité BLE (périodique)");
+                advStrategy = 0;
+                startAdvertising();
+            }
+            advHandler.postDelayed(this, ADVERTISE_REFRESH_MS);
+        }
+    };
 
     private final Runnable advRetry = new Runnable() {
         @Override
@@ -376,37 +401,44 @@ public class HrmPeripheral {
         AdvertiseData scanResponse = null;
         String label;
 
+        // Structure calquée sur une vraie ceinture (Polar H10) :
+        //   UUID 0x180D + 0x180F + nom complet, dans le paquet principal.
+        final byte[] hrServiceData = new byte[]{0x00, (byte) (BridgeState.bpm > 0
+                ? Math.min(BridgeState.bpm, 255) : 0)};
+
         switch (advStrategy) {
             case 0:
-                // le plus compatible : UUID + nom dans le MÊME paquet (certains
-                // scanners ignorent purement et simplement la réponse de scan)
+                // Polar-like : 0x180D + 0x180F + nom
                 data = new AdvertiseData.Builder()
                         .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
+                        .addServiceUuid(new ParcelUuid(SVC_BATTERY))
                         .setIncludeDeviceName(true)
                         .setIncludeTxPowerLevel(false)
                         .build();
                 scanResponse = null;
-                label = "UUID 0x180D + nom (paquet unique)";
+                label = "0x180D + 0x180F + nom (type ceinture Polar)";
                 break;
             case 1:
+                // + service data 0x180D (flags + bpm), comme le font certaines ceintures
                 data = new AdvertiseData.Builder()
                         .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
+                        .addServiceUuid(new ParcelUuid(SVC_BATTERY))
+                        .addServiceData(new ParcelUuid(SVC_HEART_RATE), hrServiceData)
+                        .setIncludeDeviceName(true)
                         .setIncludeTxPowerLevel(false)
                         .build();
-                scanResponse = new AdvertiseData.Builder()
-                        .setIncludeDeviceName(true)
-                        .build();
-                label = "UUID dans publicité + nom en réponse de scan";
+                scanResponse = null;
+                label = "0x180D + 0x180F + serviceData FC + nom";
                 break;
             case 2:
+                // UUID seul dans la publicité, nom dans la réponse de scan
                 data = new AdvertiseData.Builder()
-                        .setIncludeDeviceName(true)
                         .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
                         .build();
                 scanResponse = new AdvertiseData.Builder()
-                        .addServiceUuid(new ParcelUuid(SVC_HEART_RATE))
+                        .setIncludeDeviceName(true)
                         .build();
-                label = "UUID publicité + réponse de scan";
+                label = "UUID publicité + nom en réponse de scan";
                 break;
             default:
                 data = new AdvertiseData.Builder()
@@ -431,6 +463,7 @@ public class HrmPeripheral {
 
     private void stopAdvertising() {
         advHandler.removeCallbacks(advRetry);
+        advHandler.removeCallbacks(advRefresh);
         advRetryScheduled = false;
         if (advertiser != null) {
             try {
@@ -470,6 +503,8 @@ public class HrmPeripheral {
                     + localName() + " »");
             log("   → dans Strava : Capteurs → Fréquence cardiaque → « " + localName() + " »");
             listener.onAdvertisingStarted(true, "Publicité active (" + localName() + ")");
+            advHandler.removeCallbacks(advRefresh);
+            advHandler.postDelayed(advRefresh, ADVERTISE_REFRESH_MS);
         }
 
         @Override

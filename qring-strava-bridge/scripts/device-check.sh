@@ -9,7 +9,7 @@
 # ============================================================================
 set -u
 PKG=com.qring.strava.bridge
-APK="$(dirname "$0")/../releases/QRingStravaBridge-v3.5.apk"
+APK="$(dirname "$0")/../releases/QRingStravaBridge-v3.6.apk"
 
 echo "=== 1. Appareil ==="
 adb devices
