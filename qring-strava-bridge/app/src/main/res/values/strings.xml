@@ -15,7 +15,8 @@
     <string name="btn_simulate">Mode test (FC simulée)</string>
     <string name="btn_clear">Effacer</string>
     <string name="btn_diag">Diagnostic</string>
-    <string name="btn_selftest">Autotest BLE (pont → capteur)</string>
+    <string name="btn_selftest">Autotest BLE</string>
+    <string name="btn_rename">Nom du capteur</string>
     <string name="selftest_title">Autotest BLE</string>
     <string name="btn_share_log">Partager le journal</string>
     <string name="btn_ok">OK</string>

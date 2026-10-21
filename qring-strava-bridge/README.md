@@ -1,4 +1,4 @@
-# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.4)
+# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.5)
 
 Transforme une bague **QRing / Colmi R0x** (R02, R03, R06, R10…) en **capteur de fréquence
 cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
@@ -8,7 +8,7 @@ cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
    (protocole 0x69)          rôle central + rôle GATT server        (0x180D / 0x2A37)
 ```
 
-* **APK prête à installer :** [`releases/QRingStravaBridge-v3.4.apk`](releases/QRingStravaBridge-v3.4.apk)
+* **APK prête à installer :** [`releases/QRingStravaBridge-v3.5.apk`](releases/QRingStravaBridge-v3.5.apk)
   (41 Ko, minSdk 23, targetSdk 34, signée debug v1 + v2).
 * **Aucune dépendance externe** : 100 % API Android, aucun Google Play Services.
 
@@ -36,7 +36,7 @@ depuis l'API 18**. Ce qui manquait dans l'ancienne version :
 ## 2. Installation
 
 ```bash
-adb install -r releases/QRingStravaBridge-v3.4.apk
+adb install -r releases/QRingStravaBridge-v3.5.apk
 ```
 
 Ou copier l'APK sur le téléphone et l'ouvrir (autoriser les sources inconnues).
@@ -76,6 +76,24 @@ montraient les journaux) ne trouvait aucun service `0x180D` et repartait sans s'
 La v3.2 les enregistre **en séquence**, puis démarre la publicité, et affiche
 « FC souscrite » dès qu'une application active réellement les notifications.
 
+## 3 sexies. v3.5 — autotest réaliste et nom du capteur
+
+Deux constats issus des tests sur le Pixel 9a :
+
+1. **Un téléphone ne reçoit jamais ses propres publicités.** L'autotest v3.4 exigeait
+   de se voir soi-même : il ne pouvait donc pas réussir. La v3.5 conclut désormais
+   à partir de ce qui est réellement observable (confirmation du système + clients
+   Bluetooth effectivement connectés) et se rabat sur la connexion GATT complète
+   dans les rares cas où l'appareil se voit lui-même.
+2. **Le capteur porte le nom du téléphone (« Pixel 9a »).** Certaines applications
+   ignorent un appareil dont le nom est celui du téléphone. Le bouton
+   **« Nom du capteur »** permet de le renommer explicitement en *QRing HR*
+   (nom mémorisé, bouton **Restaurer** pour revenir en arrière).
+
+> Le client mystérieux qui se connectait toutes les 30 ms était une **HUAWEI Band 9**
+> (`D8:EF:42:01:0F:37`) : les montres connectées se branchent automatiquement sur
+> tout capteur FC à proximité. Ce n'était pas Strava.
+
 ## 3 quinquies. Correctif v3.4 — l'autotest se connectait à la mauvaise ceinture
 
 L'autotest de la v3.3 scannait tout ce qui annonce `0x180D` : il a trouvé la
@@ -89,7 +107,7 @@ journalise au passage tous les appareils `0x180D` entendus.
 > (l'application ne peut pas être remplacée par une APK signée avec une autre clé) ;
 > les versions suivantes s'installeront par-dessus.
 
-## 3 quater. Autotest BLE (v3.4)
+## 3 quater. Autotest BLE (v3.5)
 
 Bouton **« Autotest BLE (pont → capteur) »** : le téléphone se teste lui-même, sans
 application tierce.
@@ -107,7 +125,7 @@ Verdict affiché dans une boîte de dialogue et consigné dans le journal :
 | « service 0x180D ABSENT » | la base GATT n'a pas été publiée correctement (le message liste les services vus) |
 | « aucune mesure reçue » | l'abonnement est accepté mais aucune FC n'est poussée (vérifier que le mode test est actif) |
 
-## 3 bis. La bannière de statut (v3.4)
+## 3 bis. La bannière de statut (v3.5)
 
 Sous la valeur de FC, la ligne d'état est colorée :
 

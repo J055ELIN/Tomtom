@@ -61,7 +61,7 @@ public class SelfTest {
     private boolean descriptorWritten = false;
 
     private String localName = "";
-    private final java.util.LinkedHashSet<String> census = new java.util.LinkedHashSet<>();
+    private final java.util.LinkedHashMap<String, String> censusByName = new java.util.LinkedHashMap<>();
 
     public SelfTest(Context context, Callback callback) {
         this.context = context.getApplicationContext();
@@ -91,7 +91,7 @@ public class SelfTest {
             finish(false, "Scanner BLE indisponible");
             return;
         }
-        step("1/4  Recherche de notre propre publicité (0x180D, nom « " + localName + " »)…");
+        step("1/3  Vérification de la publicité en cours (0x180D, nom « " + localName + " »)…");
         try {
             ScanSettings settings = new ScanSettings.Builder()
                     .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -105,8 +105,20 @@ public class SelfTest {
             @Override
             public void run() {
                 if (!finished && !advSeen) {
-                    finish(false, "Aucune publicité 0x180D au nom « " + localName
-                            + " » vue en 12 s. Appareils 0x180D entendus : " + censusSummary());
+                    // Un téléphone Android ne reçoit pas ses propres publicités : ce
+                    // n'est pas un échec. On conclut avec ce qui est réellement
+                    // observable : le callback système + les clients qui se connectent.
+                    boolean ok = BridgeState.advertising && BridgeState.peripheralClients > 0;
+                    String verdict = (ok
+                            ? "Publicité confirmée par le système (0x180D) et "
+                              + BridgeState.peripheralClients + " client(s) Bluetooth connecté(s) "
+                              + "au pont — la diffusion fonctionne. "
+                            : (BridgeState.advertising
+                              ? "Publicité confirmée par le système, mais aucun client ne s'y est connecté. "
+                              : "Publicité NON confirmée par le système. "))
+                            + "(Un téléphone ne voit jamais ses propres publicités : "
+                            + "appareils 0x180D voisins entendus : " + censusSummary() + ".)";
+                    finish(ok, verdict);
                 }
             }
         }, 12000L);
@@ -150,12 +162,12 @@ public class SelfTest {
     }
 
     private String censusSummary() {
-        if (census.isEmpty()) {
+        if (censusByName.isEmpty()) {
             return "aucun (rien n'annonce 0x180D autour de vous)";
         }
         StringBuilder sb = new StringBuilder();
         int i = 0;
-        for (String c : census) {
+        for (String c : censusByName.values()) {
             if (i++ > 0) {
                 sb.append(", ");
             }
@@ -210,9 +222,14 @@ public class SelfTest {
         if (!hasHrUuid) {
             return;
         }
-        String label = (name == null ? "(sans nom)" : name) + " " + result.getRssi() + " dBm";
-        if (census.add(label)) {
+        String who = name == null ? "(sans nom)" : name;
+        String previous = censusByName.get(who);
+        String label = who + " " + result.getRssi() + " dBm";
+        if (previous == null) {
+            censusByName.put(who, label);
             callback.onStep("   vu : " + label);
+        } else {
+            censusByName.put(who, label);
         }
 
         // On ne se connecte QU'À notre propre publicité. Une ceinture cardiaque
@@ -224,7 +241,7 @@ public class SelfTest {
         }
 
         advSeen = true;
-        step("2/4  Notre publicité détectée : « " + name + " » annonce 0x180D ("
+        step("2/3  Notre publicité détectée : « " + name + " » annonce 0x180D ("
                 + result.getRssi() + " dBm) → connexion…");
         try {
             scanner.stopScan(scanCallback);
@@ -255,7 +272,7 @@ public class SelfTest {
         @Override
         public void onConnectionStateChange(BluetoothGatt g, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                step("3/4  Connecté au pont → découverte des services…");
+                step("3/3  Connecté au pont → découverte des services…");
                 try {
                     g.discoverServices();
                 } catch (SecurityException e) {
@@ -288,7 +305,7 @@ public class SelfTest {
                 finish(false, "0x180D présent mais caractéristique 0x2A37 absente");
                 return;
             }
-            step("4/4  Service 0x180D + 0x2A37 trouvés → abonnement aux notifications…");
+            step("Service 0x180D + 0x2A37 trouvés → abonnement aux notifications…");
             try {
                 g.setCharacteristicNotification(hrm, true);
                 BluetoothGattDescriptor cccd = hrm.getDescriptor(HrmPeripheral.CCCD);

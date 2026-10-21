@@ -50,7 +50,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
     private ScrollView logScroll;
     private ListView deviceList;
     private Button btnScan, btnConnect, btnDisconnect, btnStartBridge, btnStopBridge,
-            btnSimulate, btnClear, btnDiagnostic, btnShareLog, btnSelfTest;
+            btnSimulate, btnClear, btnDiagnostic, btnShareLog, btnSelfTest, btnRename;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<String[]> found = new ArrayList<>();   // {nom, adresse}
@@ -93,6 +93,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         btnDiagnostic = findViewById(R.id.btnDiagnostic);
         btnShareLog = findViewById(R.id.btnShareLog);
         btnSelfTest = findViewById(R.id.btnSelfTest);
+        btnRename = findViewById(R.id.btnRename);
 
         BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         btAdapter = bm != null ? bm.getAdapter() : null;
@@ -175,6 +176,12 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
             @Override
             public void onClick(View v) {
                 runSelfTest();
+            }
+        });
+        btnRename.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showRenameDialog();
             }
         });
 
@@ -517,6 +524,11 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         sb.append("\nPont : ").append(BridgeState.bridgeRunning ? "actif" : "arrêté").append('\n');
         sb.append("Publicité BLE : ").append(BridgeState.advertising ? "ACTIVE" : "inactive").append('\n');
         sb.append("Clients connectés : ").append(BridgeState.peripheralClients).append('\n');
+        String backup = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString(PREF_LOCAL_NAME_BACKUP, null);
+        if (backup != null) {
+            sb.append("Nom d'origine mémorisé : ").append(backup).append('\n');
+        }
         sb.append("Autotest BLE : ")
                 .append(BridgeState.selfTestPassed ? "RÉUSSI (capteur validé)" : "non effectué/échoué")
                 .append('\n');
@@ -591,6 +603,99 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
             }
         });
         test.start();
+    }
+
+    // ==================================================================
+    // Nom Bluetooth du téléphone = nom du capteur dans Strava
+    // ==================================================================
+
+    private static final String PREF_LOCAL_NAME_BACKUP = "local_name_backup";
+
+    private void showRenameDialog() {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setText("QRing HR");
+        input.setHint("nom visible dans Strava");
+        String currentName = "";
+        try {
+            currentName = btAdapter != null ? btAdapter.getName() : "";
+        } catch (SecurityException ignored) {
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Nom du capteur (" + (currentName == null ? "?" : currentName) + ")")
+                .setMessage("Le nom du capteur dans Strava est le nom Bluetooth du téléphone. "
+                        + "Certaines applications ignorent un appareil dont le nom est celui du "
+                        + "téléphone lui-même : choisir un nom explicite aide à le repérer.\n\n"
+                        + "Cela renomme temporairement votre téléphone ; le bouton ci-dessous "
+                        + "restaure le nom d'origine.")
+                .setView(input)
+                .setPositiveButton("Renommer", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        renameDevice(input.getText().toString().trim());
+                    }
+                })
+                .setNeutralButton("Restaurer", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        restoreName();
+                    }
+                })
+                .setNegativeButton("Annuler", null)
+                .show();
+    }
+
+    private void renameDevice(String newName) {
+        if (btAdapter == null || newName.isEmpty()) {
+            return;
+        }
+        try {
+            String current = btAdapter.getName();
+            SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+            if (current != null && !newName.equals(current)
+                    && !prefs.contains(PREF_LOCAL_NAME_BACKUP)) {
+                prefs.edit().putString(PREF_LOCAL_NAME_BACKUP, current).apply();
+            }
+            boolean ok = btAdapter.setName(newName);
+            Logs.add("[ui] renommage Bluetooth en « " + newName + " » : " + (ok ? "accepté" : "refusé"));
+            if (ok) {
+                Toast.makeText(this, "Nom changé : " + newName
+                        + "\nRedémarrez le pont pour rafraîchir la publicité.", Toast.LENGTH_LONG).show();
+                // la publicité utilise le nom au moment de son démarrage
+                stopBridge();
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        startBridge(null, null, true);
+                    }
+                }, 1200L);
+            } else {
+                Toast.makeText(this, "Renommage refusé par Android", Toast.LENGTH_LONG).show();
+            }
+        } catch (SecurityException e) {
+            Toast.makeText(this, "Permission BLUETOOTH_CONNECT nécessaire", Toast.LENGTH_LONG).show();
+        }
+        updateUi();
+    }
+
+    private void restoreName() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String original = prefs.getString(PREF_LOCAL_NAME_BACKUP, null);
+        if (original == null) {
+            Toast.makeText(this, "Aucun nom d'origine mémorisé", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (btAdapter == null) {
+            return;
+        }
+        try {
+            btAdapter.setName(original);
+            prefs.edit().remove(PREF_LOCAL_NAME_BACKUP).apply();
+            Logs.add("[ui] nom Bluetooth restauré : « " + original + " »");
+            Toast.makeText(this, "Nom restauré : " + original, Toast.LENGTH_LONG).show();
+        } catch (SecurityException e) {
+            Toast.makeText(this, "Permission refusée", Toast.LENGTH_SHORT).show();
+        }
+        updateUi();
     }
 
     private void showDiagnostic() {
