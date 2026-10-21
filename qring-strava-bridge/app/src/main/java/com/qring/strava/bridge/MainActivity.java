@@ -46,7 +46,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
     private static final String PREF_ADDR = "ring_address";
     private static final String PREF_NAME = "ring_name";
 
-    private TextView bpmText, statusText, sourceText, ringText, bridgeText, logText;
+    private TextView bpmText, statusText, sourceText, ringText, bridgeText, logText, sessionText;
     private ScrollView logScroll;
     private ListView deviceList;
     private Button btnScan, btnConnect, btnDisconnect, btnStartBridge, btnStopBridge,
@@ -95,6 +95,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         btnShareLog = findViewById(R.id.btnShareLog);
         btnSelfTest = findViewById(R.id.btnSelfTest);
         btnRename = findViewById(R.id.btnRename);
+        sessionText = findViewById(R.id.sessionText);
         btnExport = findViewById(R.id.btnExport);
         btnStrava = findViewById(R.id.btnStrava);
 
@@ -459,6 +460,8 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         BridgeState.bridgeRunning = true;
         BridgeState.setStatus(simulate ? "Démarrage du mode test…" : "Démarrage du pont…");
         Logs.add("[ui] démarrage du service" + (simulate ? " (simulation)" : ""));
+        handler.removeCallbacks(sessionTick);
+        handler.postDelayed(sessionTick, 1000L);
         updateUi();
     }
 
@@ -473,7 +476,14 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         BridgeState.bridgeRunning = false;
         BridgeState.setStatus("Arrêt demandé…");
         Logs.add("[ui] arrêt du pont demandé");
+        handler.removeCallbacks(sessionTick);
         updateUi();
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                autoUploadIfLinked();
+            }
+        }, 2500L);
     }
 
     // ==================================================================
@@ -483,6 +493,34 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
     @Override
     public void onBridgeStateChanged() {
         updateUi();
+    }
+
+    /** Rafraîchit le bandeau de séance (durée, distance, FC moy/max) chaque seconde. */
+    private final Runnable sessionTick = new Runnable() {
+        @Override
+        public void run() {
+            updateSessionBar();
+            if (recorder().isRecording()) {
+                handler.postDelayed(this, 1000L);
+            }
+        }
+    };
+
+    private void updateSessionBar() {
+        if (sessionText == null) {
+            return;
+        }
+        SessionRecorder rec = recorder();
+        if (!rec.isRecording() && rec.getSampleCount() < 2) {
+            sessionText.setText("Séance : —");
+            return;
+        }
+        long ms = rec.getDurationMs();
+        long h = ms / 3600000L, m = (ms % 3600000L) / 60000L, sec = (ms % 60000L) / 1000L;
+        double km = rec.getDistanceMeters() / 1000.0;
+        sessionText.setText(String.format(Locale.FRANCE,
+                "Séance  %d:%02d:%02d   ·   %.2f km   ·   FC moy %d / max %d",
+                h, m, sec, km, rec.getAverageHr(), rec.getMaxHr()));
     }
 
     private void updateUi() {
@@ -725,6 +763,22 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         super.onNewIntent(intent);
         setIntent(intent);
         handleStravaRedirect(intent);
+    }
+
+    /** En fin de séance : publie sur Strava sans aucune action si le compte est lié. */
+    private void autoUploadIfLinked() {
+        SessionRecorder rec = recorder();
+        if (!StravaClient.isLinked(this) || rec.tcxBytes() == null) {
+            return;
+        }
+        if (rec.getDurationMs() < 60000L) {
+            Logs.add("[strava] séance trop courte, pas d'envoi automatique");
+            return;
+        }
+        Logs.add("[strava] envoi automatique en fin de séance");
+        Toast.makeText(this, "Séance terminée : envoi automatique à Strava…",
+                Toast.LENGTH_LONG).show();
+        sendSessionToStrava();
     }
 
     private void stravaUpload() {

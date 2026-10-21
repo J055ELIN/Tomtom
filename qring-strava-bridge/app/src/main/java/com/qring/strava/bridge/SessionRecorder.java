@@ -115,6 +115,40 @@ public class SessionRecorder {
         return samples.size();
     }
 
+    /** Distance cumulée de la séance en cours (mètres). */
+    public double getDistanceMeters() {
+        synchronized (samples) {
+            return totalDistance(new ArrayList<>(samples));
+        }
+    }
+
+    /** FC moyenne des points enregistrés (0 si aucun). */
+    public int getAverageHr() {
+        synchronized (samples) {
+            int sum = 0, n = 0;
+            for (Sample s : samples) {
+                if (s.bpm > 0) {
+                    sum += s.bpm;
+                    n++;
+                }
+            }
+            return n == 0 ? 0 : sum / n;
+        }
+    }
+
+    /** FC maximale des points enregistrés (0 si aucun). */
+    public int getMaxHr() {
+        synchronized (samples) {
+            int max = 0;
+            for (Sample s : samples) {
+                if (s.bpm > max) {
+                    max = s.bpm;
+                }
+            }
+            return max;
+        }
+    }
+
     public long getDurationMs() {
         if (!recording || samples.isEmpty()) {
             return samples.isEmpty() ? 0L : samples.get(samples.size() - 1).time - startTime;
