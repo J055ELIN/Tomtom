@@ -3,12 +3,8 @@ build/
 local.properties
 *.iml
 .idea/
-<<<<<<< HEAD
-*.keystore
-=======
-# Keystore de DEBUG volontairement versionnée : elle ne protège rien et garantit
-# que toutes les APK de releases/ partagent la même signature (mise à jour sans
-# désinstallation). Pour une diffusion publique, générez votre propre keystore.
+# La keystore de DEBUG est volontairement versionnée : elle ne protège rien et
+# garantit que toutes les APK de releases/ partagent la même signature, donc
+# qu'elles s'installent par-dessus les versions précédentes. Voir README §8.
 #*.keystore
->>>>>>> 27d0d3b (QRing v3.4: autotest ciblé sur notre propre publicité (ignore les ceintures voisines) + keystore de debug versionnée pour des MAJ installables)
 *.jks
