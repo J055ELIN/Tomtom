@@ -1,4 +1,4 @@
-# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v4.0)
+# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v4.1)
 
 Transforme une bague **QRing / Colmi R0x** (R02, R03, R06, R10…) en **capteur de fréquence
 cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
@@ -8,7 +8,7 @@ cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
    (protocole 0x69)          rôle central + rôle GATT server        (0x180D / 0x2A37)
 ```
 
-* **APK prête à installer :** [`releases/QRingStravaBridge-v4.0.apk`](releases/QRingStravaBridge-v4.0.apk)
+* **APK prête à installer :** [`releases/QRingStravaBridge-v4.1.apk`](releases/QRingStravaBridge-v4.1.apk)
   (41 Ko, minSdk 23, targetSdk 34, signée debug v1 + v2).
 * **Aucune dépendance externe** : 100 % API Android, aucun Google Play Services.
 
@@ -36,7 +36,7 @@ depuis l'API 18**. Ce qui manquait dans l'ancienne version :
 ## 2. Installation
 
 ```bash
-adb install -r releases/QRingStravaBridge-v4.0.apk
+adb install -r releases/QRingStravaBridge-v4.1.apk
 ```
 
 Ou copier l'APK sur le téléphone et l'ouvrir (autoriser les sources inconnues).
@@ -93,6 +93,23 @@ Pixel. Deux usages possibles :
 | Pont sur le Pixel + **Strava sur un second téléphone** | ✅ oui (vérifié) |
 | Pont + **Strava sur le même téléphone** | ❌ impossible par BLE |
 | Pont + **export TCX importé dans Strava (même téléphone)** | ✅ oui → voir ci-dessous |
+
+## 3 quaterdecies. v4.1 — ce qui est VÉRIFIÉ et ce qui ne l'est pas
+
+Par honnêteté, chaque affirmation de ce projet porte désormais une étiquette.
+
+| Affirmation | État | Preuve |
+|---|---|---|
+| La bague diffuse sa FC au téléphone | **vérifié** | `FC 99 bpm` dans les journaux |
+| Un second téléphone voit ce capteur et Strava s'y abonne | **vérifié** | journal du 21/10 (`Abonnement FC activé par 55:DE:C5:05:82:47`) |
+| Un même téléphone ne peut pas s'écouter | **vérifié** | invisible aussi dans nRF Connect |
+| L'export TCX donne une activité Strava avec carte + FC | **vérifié** (règles Strava) | fichier produit, contrôlé |
+| Le client d'envoi Strava (OAuth + multipart + suivi) | **vérifié hors téléphone** | `tests/stravaclient` : faux serveur, requêtes contrôlées, `ok=true` |
+| Le retour du navigateur `qringhr://qringhr` | **non vérifié** | dépend du téléphone, à tester une fois |
+| Le vrai serveur Strava accepte ce fichier | **non vérifié** | quotas/refus possibles |
+
+La règle appliquée : une ligne « vérifié » veut dire qu'un test reproductible existe
+dans le dépôt ou qu'un journal l'a montré. Tout le reste est annoncé comme hypothèse.
 
 ## 3 terdecies. v4.0 — bandeau de séance en direct et envoi automatique
 
@@ -226,7 +243,7 @@ journalise au passage tous les appareils `0x180D` entendus.
 > (l'application ne peut pas être remplacée par une APK signée avec une autre clé) ;
 > les versions suivantes s'installeront par-dessus.
 
-## 3 quater. Autotest BLE (v4.0)
+## 3 quater. Autotest BLE (v4.1)
 
 Bouton **« Autotest BLE (pont → capteur) »** : le téléphone se teste lui-même, sans
 application tierce.
@@ -244,7 +261,7 @@ Verdict affiché dans une boîte de dialogue et consigné dans le journal :
 | « service 0x180D ABSENT » | la base GATT n'a pas été publiée correctement (le message liste les services vus) |
 | « aucune mesure reçue » | l'abonnement est accepté mais aucune FC n'est poussée (vérifier que le mode test est actif) |
 
-## 3 bis. La bannière de statut (v4.0)
+## 3 bis. La bannière de statut (v4.1)
 
 Sous la valeur de FC, la ligne d'état est colorée :
 

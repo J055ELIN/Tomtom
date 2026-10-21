@@ -30,9 +30,11 @@ public class StravaClient {
     public static final String CALLBACK_DOMAIN = "qringhr";
     public static final String REDIRECT_URI = "qringhr://qringhr";
 
-    private static final String AUTHORIZE_URL = "https://www.strava.com/oauth/mobile/authorize";
-    private static final String TOKEN_URL = "https://www.strava.com/oauth/token";
-    private static final String UPLOAD_URL = "https://www.strava.com/api/v3/uploads";
+    /** Base des URL : modifiable uniquement pour les tests hors appareil. */
+    static String base = "https://www.strava.com";
+    private static String AUTHORIZE_URL() { return base + "/oauth/mobile/authorize"; }
+    private static String TOKEN_URL() { return base + "/oauth/token"; }
+    private static String UPLOAD_URL() { return base + "/api/v3/uploads"; }
 
     private static final String PREF_ACCESS = "strava_access_token";
     private static final String PREF_REFRESH = "strava_refresh_token";
@@ -76,7 +78,7 @@ public class StravaClient {
     }
 
     public static String authorizeUrl(Context c) {
-        return AUTHORIZE_URL
+        return AUTHORIZE_URL()
                 + "?client_id=" + enc(clientId(c))
                 + "&redirect_uri=" + enc(REDIRECT_URI)
                 + "&response_type=code"
@@ -97,7 +99,7 @@ public class StravaClient {
                             + "&client_secret=" + enc(clientSecret(ctx))
                             + "&code=" + enc(code)
                             + "&grant_type=authorization_code";
-                    String json = post(TOKEN_URL, body);
+                    String json = post(TOKEN_URL(), body);
                     if (storeTokens(ctx, json)) {
                         cb.done(true, "Compte Strava lié.");
                     } else {
@@ -132,7 +134,7 @@ public class StravaClient {
                     writeFile(buf, boundary, "data", fileName, tcx);
                     buf.write(("--" + boundary + "--\r\n").getBytes("UTF-8"));
 
-                    String resp = postBytes(UPLOAD_URL, buf.toByteArray(),
+                    String resp = postBytes(UPLOAD_URL(), buf.toByteArray(),
                             "multipart/form-data; boundary=" + boundary, token);
                     int id = intValue(resp, "\"id\"\\s*:\\s*(\\d+)");
                     if (id <= 0) {
@@ -144,7 +146,7 @@ public class StravaClient {
                     // Strava traite le fichier en arrière-plan : on interroge l'état.
                     for (int i = 0; i < 20; i++) {
                         Thread.sleep(3000L);
-                        String status = get(UPLOAD_URL + "/" + id, token);
+                        String status = get(UPLOAD_URL() + "/" + id, token);
                         String s = strValue(status, "\"status\"\\s*:\\s*\"([^\"]*)\"");
                         if (s == null) {
                             continue;
@@ -189,7 +191,7 @@ public class StravaClient {
                 + "&client_secret=" + enc(clientSecret(ctx))
                 + "&grant_type=refresh_token"
                 + "&refresh_token=" + enc(refresh);
-        String json = post(TOKEN_URL, body);
+        String json = post(TOKEN_URL(), body);
         if (storeTokens(ctx, json)) {
             return prefs(ctx).getString(PREF_ACCESS, null);
         }
