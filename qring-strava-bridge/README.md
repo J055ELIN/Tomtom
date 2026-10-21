@@ -336,7 +336,7 @@ Le projet reste également ouvrable dans **Android Studio** (`settings.gradle`,
 | Manifeste compilé | ✔ `package=com.qring.strava.bridge`, `versionCode=3`, `targetSdk=34`, `foregroundServiceType=connectedDevice` |
 | Signature | ✔ v1 (JAR) + v2 (APK Signature Scheme) |
 | Encodage des trames bague | ✔ **octet pour octet** identique au prototype Python `qring` (start, stop, keep-alive, batterie, heure) |
-| Exécution sur appareil réel | ⏳ à faire (voir `SOP-QRING-STRAVA-v3.md` §5) |
+| Exécution sur appareil réel | ✅ faite — résultats dans `SOP-QRING-STRAVA-v3.md` §2 |
 
 ## 7. Fichiers
 
@@ -348,7 +348,7 @@ Le projet reste également ouvrable dans **Android Studio** (`settings.gradle`,
 | `app/src/main/java/.../MainActivity.java` | interface : scan, connexion, FC, journal |
 | `build.sh` | compilation APK sans Gradle |
 | `ci/qring-strava-bridge-build.yml` | workflow GitHub Actions (build + test émulateur) — à copier dans `.github/workflows/` |
-| `SOP-QRING-STRAVA-v3.md` | SOP de reprise complet (environnement, protocole, suite) |
+| `SOP-QRING-STRAVA-v3.md` | SOP de reprise v4.1 (état réel, vérifié/non vérifié, protocole, build) |
 
 ## 8. Sécurité
 

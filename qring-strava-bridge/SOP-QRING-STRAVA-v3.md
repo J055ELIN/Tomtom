@@ -1,140 +1,147 @@
-# SOP — QRing → Strava HR Bridge (v3.0)
+# SOP — QRing / Colmi → Strava (v4.1)
 
-**Date :** 2026-10-20
-**Projet :** application Android qui transforme une bague QRing/Colmi en capteur de
-fréquence cardiaque BLE standard, détectable par Strava
-**Emplacement :** `/home/user/Tomtom/qring-strava-bridge/` (dépôt `J055ELIN/Tomtom`,
-branche `arena/20770d9e-tomtom`)
-**APK :** `releases/QRingStravaBridge-v3.1.apk` — 41 511 octets (v3.0 conservée à 37 415 octets), v1 + v2, minSdk 23, targetSdk 34
+**Date :** 2026-10-21
+**Projet :** application Android qui rend une bague QRing/Colmi utilisable comme
+capteur de fréquence cardiaque dans Strava
+**Emplacement :** `qring-strava-bridge/` — dépôt `J055ELIN/Tomtom`, branche
+`arena/20770d9e-tomtom`
+**APK courante :** `releases/QRingStravaBridge-v4.1.apk` — 66 087 octets,
+`versionName 4.1` / `versionCode 14`, signatures v1 + v2, minSdk 23, targetSdk 34.
+
+> Ce document remplace le SOP v3.0. Les sections techniques encore valables
+> (protocole bague, chaîne de compilation hors ligne) ont été conservées et
+> vérifiées ; tout le reste a été réécrit pour refléter l'état réel du 21/10.
 
 ---
 
 ## 1. Résumé exécutif
 
-| Point | v1 (SOP précédent) | v3.0 (ce document) |
-|---|---|---|
-| Blocage « `openGattServer()` n'existe pas » | considéré comme bloquant | **corrigé : l'API est publique depuis l'API 18**, mauvais point d'entrée utilisé avant |
-| Diffusion FC vers Strava | impossible | **implémentée** (service `0x180D`, caractéristique `0x2A37`, publicité BLE) |
-| Protocole bague | supposé (`0x1e` seul) | **vérifié octet pour octet** contre `qlam-ai/qring` |
-| APK | 34 Ko, non testable | 37 Ko, signée, **compilée et validée** (compilation + DEX + manifeste + signature) |
-| Environnement de build | `/opt/sfa-tools` (JDK 21 + SDK) | **absent de ce sandbox** → chaîne de compilation alternative reconstituée (§3) |
-| Test matériel | à faire | à faire (le sandbox n'a ni adb ni émulateur KVM) |
+| Question | Réponse, au 2026-10-21 |
+|---|---|
+| La bague peut-elle fournir une FC au téléphone ? | **Oui**, vérifié (journaux : `FC 99 bpm`) |
+| Strava peut-il voir le capteur émis par ce même téléphone ? | **Non** — un appareil ne reçoit jamais ses propres publicités BLE (vérifié aussi dans nRF Connect) |
+| Et depuis un second téléphone ? | **Oui, vérifié** : `Abonnement FC activé par 55:DE:C5:05:82:47`, lectures `0x2A26`/`0x2A29`/`0x2A25` |
+| Et avec un seul téléphone ? | La séance est **enregistrée puis publiée dans Strava** (FC + GPS) ; la FC n'est pas affichée en direct *dans Strava* |
+| Modifier l'APK de Strava pour lire la bague ? | **Abandonné** : contrefaçon, risque de vol d'identifiants, à refaire à chaque mise à jour. Ne pas rouvrir ce chantier |
 
 ---
 
-## 2. Architecture livrée
+## 2. Ce qui est vérifié, ce qui ne l'est pas
+
+Règle du projet : une ligne « vérifié » signifie qu'un **test reproductible existe
+dans le dépôt** ou qu'un **journal l'a montré**. Tout le reste est une hypothèse et
+est annoncé comme telle.
+
+| Affirmation | État | Preuve |
+|---|---|---|
+| Protocole bague (trames 16 octets, checksum) | **vérifié** | identique octet pour octet à `qlam-ai/qring` (§5) |
+| La bague diffuse sa FC | **vérifié** | journal : `→ démarrage du flux FC temps réel`, `FC 99 bpm` |
+| Le service GATT `0x180D` + `0x2A37` est correct | **vérifié** | abonnement d'un central distant, lectures `0x2A26`/`0x2A29`/`0x2A25` |
+| Un même téléphone ne voit pas sa propre publicité | **vérifié** | invisible dans Strava **et** dans nRF Connect sur le Pixel 9a |
+| L'autotest « se voir soi-même » | **impossible** sur Android | ne jamais le réintroduire comme critère de réussite |
+| Export TCX (FC + GPS) accepté par Strava | **vérifié** au niveau des règles Strava | fichier produit, `Position` + `HeartRateBpm` |
+| Client d'envoi Strava (OAuth, multipart, polling) | **vérifié hors téléphone** | `tests/stravaclient` : faux serveur, `LIAISON ok=true`, `ENVOI ok=true` |
+| Retour du navigateur `qringhr://qringhr` | **non vérifié** | dépend du téléphone ; échec visible à l'écran |
+| Le vrai serveur Strava accepte le fichier | **non vérifié** | quotas et refus métier possibles |
+
+---
+
+## 3. Architecture
 
 ```
-┌────────────────┐   BLE (central)      ┌──────────────────────────────┐   BLE (périphérique)   ┌──────────┐
-│ bague QRing /  │  UART Nordique       │  HrBridgeService (FGS)       │   GATT server          │  Strava  │
-│ Colmi R02/R06  │  6E40FFF0 / 6E400002 │  ├── RingBleClient  (client) │   0x180D / 0x2A37      │  Wahoo   │
-│                │ ───────────────────► │  └── HrmPeripheral  (serveur)│ ─────────────────────► │  Garmin  │
-└────────────────┘  0x69 / 0x6A / 0x1E  └──────────────────────────────┘   publicité + notify    └──────────┘
+┌────────────────┐   BLE (central)      ┌──────────────────────────────┐
+│ bague QRing /  │  UART Nordique       │  HrBridgeService (FGS)       │
+│ Colmi R02/R06  │  6E40FFF0 / 6E400002 │  ├── RingBleClient  (client) │
+│                │ ───────────────────► │  ├── HrmPeripheral  (serveur)│
+└────────────────┘  0x69 / 0x6A / 0x1E  │  └── SessionRecorder (TCX)   │
+                                       └──────────────────────────────┘
+                                        │ 0x180D/0x2A37      │ API Strava
+                                        ▼ (autre téléphone)   ▼ (même téléphone)
+                                     Strava / Wahoo /      strava.com
+                                     Garmin                (activité)
 ```
 
-* **Un seul service de premier plan** (`connectedDevice` + wake lock) porte les deux rôles BLE
-  simultanément : central vers la bague, périphérique vers Strava.
-* **Mode test** : FC simulée (62–158 bpm) pour valider la liaison Strava sans bague.
+Deux voies coexistent, elles ne s'excluent pas :
+
+1. **Pont BLE** — le téléphone se présente comme une ceinture `0x180D`. Utilisable
+   par **un autre appareil** (second téléphone, montre, compteur). C'est la seule
+   façon d'avoir la FC **en direct dans Strava**.
+2. **Séance + API** — `SessionRecorder` enregistre FC (1 pt/s) + GPS, puis
+   `StravaClient` publie l'activité via l'API officielle. Fonctionne **sur un seul
+   téléphone**, mais la FC n'apparaît qu'après la séance.
 
 ### Fichiers
 
-| Fichier | Lignes | Rôle |
-|---|---|---|
-| `RingBleClient.java` | ~430 | connexion bague, trames 16 octets, checksum, keep-alive 20 s, relance si silence > 25 s, reconnexion auto |
-| `HrmPeripheral.java` | ~470 | `BluetoothManager.openGattServer()`, services FC/batterie/infos, `BluetoothLeAdvertiser`, gestion des abonnements CCCD |
-| `HrBridgeService.java` | ~300 | service de premier plan, notification permanente, simulation, wake lock |
-| `MainActivity.java` | ~440 | scan filtré (UUID UART ou nom R02/R03/R06/R10/Colmi/QRing), sélection, FC, journal |
-| `BridgeState.java`, `Logs.java` | ~120 | état partagé et journal (UI + logcat `QRingBridge`) |
+| Fichier | Rôle |
+|---|---|
+| `RingBleClient.java` | connexion bague, trames 16 octets, checksum, keep-alive 20 s, reconnexion |
+| `HrmPeripheral.java` | GATT server, services séquentiels, 5 stratégies de publicité, rafraîchissement 60 s |
+| `HrBridgeService.java` | service de premier plan, notification, simulation, wake lock |
+| `SessionRecorder.java` | échantillonnage FC + GPS, écriture TCX (`Téléchargements/QRingHR`) |
+| `StravaClient.java` | OAuth, rafraîchissement du jeton, envoi multipart, suivi du traitement |
+| `SelfTest.java` | autotest GATT + recensement hexadécimal des publicités voisines |
+| `MainActivity.java` | scan, sélection, FC, bandeau de séance, boutons d'export/envoi |
+| `BridgeState.java`, `Logs.java` | état partagé et journal (UI + logcat `QRingBridge`) |
 
 ---
 
-## 3. Environnement de compilation : ce qui a changé
+## 4. Modes d'utilisation
 
-### 3.1 Constat
+### 4.1 Un seul téléphone (cas de l'utilisateur)
 
-Le sandbox de cette session **n'a ni JDK, ni Android SDK, ni Gradle** (`/opt/sfa-tools`
-n'existe pas) et l'accès réseau est limité à `github.com`, `codeload.github.com`,
-`api.github.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`
-(`dl.google.com`, `services.gradle.org`, `objects.githubusercontent.com` et
-`raw.githubusercontent.com` sont bloqués).
+1. **Connecter la bague** → la FC s'affiche en gros caractères dans l'appli.
+2. **Démarrer le pont** → le bandeau affiche `Séance 0:42:17 · 12.84 km · FC moy 131 / max 152`.
+3. **Arrêter le pont** → si le compte Strava est lié et la séance > 1 min, l'activité
+   part automatiquement. Sinon, bouton **Envoyer la séance à Strava**.
+4. Repli sans réseau : **Exporter la séance (TCX)** puis Strava → Enregistrer → (+)
+   → Importer un fichier.
 
-### 3.2 Chaîne de compilation reconstituée (100 % hors ligne)
+### 4.2 Deux téléphones (seule voie pour la FC en direct dans Strava)
 
-| Besoin | Outil retenu | Provenance |
-|---|---|---|
-| JVM | **Temurin JRE 25** (`jdk4py`) | PyPI : `pip download jdk4py` → `jdk4py/java-runtime` |
-| `android.jar` API 34 | `Sable/android-platforms` → `android-34/android.jar` (26 Mo) | API GitHub blobs (non-LFS) |
-| Compilateur Java | **ECJ 4.10** (`ecj-4.10.jar`) | `facebook/buck` → `third-party/java/eclipse/ecj-4.10.jar` |
-| `aapt2` (Linux) | aapt2 2.19 | PyPI `aapt2` → `aapt2/bin/Linux/aapt2` |
-| `zipalign`, `apksigner.jar`, `aapt` | build-tools 28 (Linux) | PyPI `adapktools` → `adapktools/lib/linux/` |
-| Dexer | **dx 1.10** (`dx.jar`) | `hekai/android-sdk-linux` → `build-tools/21.0.1/lib/dx.jar` |
-| Validation DEX | `baksmali 2.2.4` | `facebook/buck` (jeu de test smali) |
-| Keystore | `keytool` du JRE | généré au premier build |
+| Téléphone | Rôle |
+|---|---|
+| A (poche) | appli QRing : bague connectée + pont démarré, notification visible |
+| B (guidon) | Strava : capteur « QRing HR » + GPS |
 
-> **Conséquence importante :** `dx` (2014) ne gère **pas** `invokedynamic`.
-> Tout le code a donc été réécrit en **Java 7 strict** (classes anonymes au lieu de lambdas).
-> C'est transparent pour l'utilisateur et reste compilable par `javac`/Gradle/d8/R8.
-> Si l'on veut revenir aux lambdas : remplacer les classes anonymes par des lambdas et
-> compiler avec `javac` + `d8` (les deux sont déjà supportés par `build.sh`).
+Contraintes : A à moins de 10 m, optimisation de batterie désactivée pour l'appli,
+ne pas lancer l'appli QRing sur B, un seul pont à la fois.
 
-### 3.3 Commandes exactes utilisées dans ce sandbox
+### 4.3 Liaison Strava (une seule fois)
 
-```bash
-# outils (une seule fois)
-pip download jdk4py --no-deps -d /tmp/jdk        && unzip -q /tmp/jdk/*.whl -d /tmp/jdk/ex
-pip download aapt2   --no-deps -d /tmp/pipx      && unzip -q /tmp/pipx/aapt2-*.whl -d /tmp/pipx/aa
-pip download adapktools --no-deps -d /tmp/adapt  && tar xzf /tmp/adapt/adApkTools-*.tar.gz -C /tmp/adapt
-# android.jar
-gh api repos/Sable/android-platforms/git/blobs/<sha> --jq .content | base64 -d > /tmp/sdk/android-34.jar
-# ecj, dx, baksmali : idem via l'API blobs (voir SOP historique pour les chemins)
+1. Bouton **Envoyer la séance à Strava** → **Ouvrir strava.com** → *My API Application* :
+   nom `QRing`, catégorie `Other`, site `https://strava.com`.
+2. Champ **Authorization Callback Domain** : `qringhr` (exactement).
+3. Coller **Client ID** + **Client Secret**, puis **Autoriser** → retour automatique
+   dans l'appli par `qringhr://qringhr?code=…`.
 
-# compilation
-cd qring-strava-bridge
-env JAVA_HOME=/tmp/jdk/ex/jdk4py/java-runtime \
-    ANDROID_PLATFORM=/tmp/sdk/android-34.jar \
-    AAPT2=/tmp/pipx/aa/aapt2/bin/Linux/aapt2 \
-    ZIPALIGN=/tmp/adapt/adApkTools-1.0.6/adapktools/lib/linux/zipalign \
-    APKSIGNER_JAR=/tmp/adapt/adApkTools-1.0.6/adapktools/lib/linux/apksigner.jar \
-    ECJ_JAR=/tmp/ecj/ecj.jar DX_JAR=/tmp/dx.jar \
-    bash build.sh
-```
-
-### 3.4 Avec un vrai SDK (recommandé, chemin B du SOP historique)
-
-```bash
-export ANDROID_HOME=/opt/sfa-tools/sdk
-export ANDROID_BUILD_TOOLS=$ANDROID_HOME/build-tools/34.0.0
-export ANDROID_PLATFORM=$ANDROID_HOME/platforms/android-34/android.jar
-export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
-bash build.sh          # aapt2 + javac + d8 + zipalign + apksigner
-# ou : ./gradlew :app:assembleDebug
-```
+Ces deux valeurs restent dans les préférences privées de l'appli : **aucun
+identifiant n'est dans le code ni dans le dépôt**.
 
 ---
 
-## 4. Protocole de la bague (vérifié)
+## 5. Protocole de la bague (vérifié)
 
-Source de vérité : `qlam-ai/qring` (`packet.py`, `real_time.py`, `battery.py`, `set_time.py`),
-recoupé avec Gadgetbridge PR #3896.
+Source de vérité : `qlam-ai/qring` (`packet.py`, `real_time.py`, `battery.py`,
+`set_time.py`), recoupé avec Gadgetbridge PR #3896.
 
 * Service UART : `6E40FFF0-B5A3-F393-E0A9-E50E24DCCA9E`
   * écriture (vers la bague) : `6E400002-…`
   * notifications : `6E400003-…`
-* Trame = **16 octets** : `[commande, données…, 0x00…, checksum]`, `checksum = somme(octets 0..14) & 0xFF`.
+* Trame = **16 octets** : `[commande, données…, 0x00…, checksum]`,
+  `checksum = somme(octets 0..14) & 0xFF`.
 
 | Commande | Payload | Effet |
 |---|---|---|
 | `0x69` | `01 01` | démarrer le flux FC temps réel (type 1 = FC, action 1 = START) |
 | `0x6A` | `01 00 00` | arrêter le flux |
 | `0x1E` | `33` | keep-alive « continue » (toutes les 20 s) |
-| `0x03` | — | niveau de batterie → réponse `[03, niveau%, enCharge]` |
-| `0x01` | 7 octets BCD (année-2000, mois, jour, h, m, s, langue) | règle l'horloge de la bague (UTC) |
-| `0x15` | timestamp 4 octets LE | historique FC 288 points / 5 min (non utilisé ici) |
+| `0x03` | — | niveau de batterie → `[03, niveau%, enCharge]` |
+| `0x01` | 7 octets BCD | règle l'horloge de la bague (UTC) |
+| `0x15` | timestamp 4 octets LE | historique FC 288 points / 5 min (non utilisé) |
 
 Réponse temps réel : `[0x69, type=0x01, codeErreur, bpm]`.
 
-**Test automatisé ajouté** : les 5 trames produites par `RingBleClient.buildPacket()` ont été
-comparées à `make_packet()` du prototype Python — **identiques octet pour octet** :
+Trames comparées octet pour octet avec le prototype Python — **identiques** :
 
 ```
 start_hr = 6901010000000000000000000000006B
@@ -144,74 +151,107 @@ battery  = 03000000000000000000000000000003
 set_time = 012510201435000100000000000000A0
 ```
 
+Trames réelles de ceintures voisines, relevées par nRF Connect (utiles pour la
+publicité) :
+
+```
+Joss-FUSE : 0A 09 4A 6F 73 73 2D 46 55 53 45 02 01 06 03 03 0D 18 07 FF 89 01 23 12 01 80
+NEW-FUSE  : 09 09 4E 45 57 2D 46 55 53 45 02 01 06 03 03 0D 18 07 FF 89 01 36 AB 00 80
+```
+
 ---
 
-## 5. Validation effectuée / restante
+## 6. Chaîne de compilation (sandbox sans SDK)
 
-### 5.1 Fait dans cette session
+Le sandbox n'a ni JDK, ni Android SDK, ni Gradle, et les accès réseau sont limités
+à GitHub / PyPI / npm. La chaîne est reconstituée entièrement hors ligne ; le script
+`/tmp/setup-tools.sh` la remet en place (à recréer si `/tmp` a été réinitialisé).
+
+| Besoin | Outil | Provenance |
+|---|---|---|
+| JVM | Temurin JRE 25 (`jdk4py`) | PyPI `jdk4py` |
+| `android.jar` API 34 | `Sable/android-platforms` | API blobs GitHub |
+| Compilateur | ECJ 4.10 | `facebook/buck` |
+| `aapt2` | 2.19 (Linux) | PyPI `aapt2` |
+| `zipalign`, `apksigner` | build-tools 28 | PyPI `adapktools` |
+| Dexer | dx 1.10 | `hekai/android-sdk-linux` |
+
+> `dx` ne gère pas `invokedynamic` : **tout le code est en Java 7 strict**
+> (classes anonymes, pas de lambdas).
+
+```bash
+cd qring-strava-bridge
+env -i PATH=/usr/bin:/bin HOME=/tmp \
+    JAVA_HOME=/tmp/jdk/ex/jdk4py/java-runtime \
+    ANDROID_PLATFORM=/tmp/sdk/android-34.jar \
+    AAPT2=/tmp/pipx/aa/aapt2/bin/Linux/aapt2 \
+    ZIPALIGN=/tmp/adapt/adApkTools-1.0.6/adapktools/lib/linux/zipalign \
+    APKSIGNER_JAR=/tmp/adapt/adApkTools-1.0.6/adapktools/lib/linux/apksigner.jar \
+    ECJ_JAR=/tmp/ecj/ecj.jar DX_JAR=/tmp/dx.jar \
+    bash build.sh
+```
+
+Avec un vrai SDK : `ANDROID_HOME`, `ANDROID_BUILD_TOOLS=34.0.0`, `JAVA_HOME` en
+JDK 21+, puis `bash build.sh`.
+
+---
+
+## 7. Validation
 
 | Étape | Résultat |
 |---|---|
-| Compilation ECJ contre `android.jar` 34 | 37 classes, 0 erreur, 21 avertissements (dépréciations API) |
-| `aapt2 link` (manifeste + ressources) | OK, `foregroundServiceType=0x10` bien présent |
-| DEX (`dx`) puis réassemblage `baksmali` | 37 classes, DEX valide |
-| `zipalign -p 4` + `apksigner` | v1 ✔ v2 ✔ |
-| `aapt2 dump badging` | `com.qring.strava.bridge`, v3, cible 34, permissions BLE + FGS |
-| Trames bague vs prototype Python | identiques |
+| Compilation ECJ contre `android.jar` 34 | 0 erreur |
+| `aapt2 link` | OK, `foregroundServiceType` présent |
+| `dx` + réassemblage dans l'APK | DEX valide |
+| `zipalign` + `apksigner` | v1 ✔ v2 ✔ |
+| `tests/stravaclient/run.sh` | `LIAISON ok=true`, `ENVOI ok=true`, `activité n°987654` |
+| Test matériel Pixel 9a | fait : bague OK, pont OK, second téléphone OK ; même téléphone impossible |
 
-### 5.2 Reste à faire sur le Pixel 9a
+Rejouer le test du client Strava :
 
 ```bash
-adb install -r qring-strava-bridge/releases/QRingStravaBridge-v3.1.apk
-adb shell pm grant com.qring.strava.bridge android.permission.BLUETOOTH_SCAN
-adb shell pm grant com.qring.strava.bridge android.permission.BLUETOOTH_CONNECT
-adb shell pm grant com.qring.strava.bridge android.permission.BLUETOOTH_ADVERTISE
-adb shell am start -n com.qring.strava.bridge/.MainActivity
-adb logcat -s QRingBridge
+cd qring-strava-bridge/tests/stravaclient
+ECJ_JAR=/tmp/ecj/ecj.jar JAVA=/tmp/jdk/ex/jdk4py/java-runtime/bin/java bash run.sh
 ```
 
-1. **Mode test d'abord** : bouton « Mode test (FC simulée) » → dans Strava, la ceinture
-   le nom Bluetooth du téléphone doit apparaître et afficher 62–158 bpm. Si ce point fonctionne, la moitié
-   « Strava » du problème est validée (indépendamment de la bague).
-2. **Puis la bague** : Scanner → sélection → « Connecter la bague ». Vérifier le journal :
-   * `Notifications activées` → connexion GATT OK ;
-   * `→ démarrage du flux FC temps réel (0x69)` → commande envoyée ;
-   * trames `0x69` avec bpm → protocole conforme.
-3. Si la FC reste à `--` : le journal affiche les trames brutes reçues (ligne
-   `Trame 0x.. : …`). Cas fréquents : R06/R10 qui répondent avec un autre type, ou
-   bague qui exige `0x69 01 03` (CONTINUE) au lieu de START. Ajuster
-   `RingBleClient.handlePacket()` / `startHeartRateStream()` — l'architecture est prête.
+---
+
+## 8. Sécurité et limites légales
+
+* `debug.keystore` (mot de passe `android`, alias `androiddebugkey`) est **versionné**
+  pour que toutes les APK ≥ 3.4 s'installent par-dessus. Ce n'est pas une clé de
+  production : si l'appli devait être publiée, générer une vraie keystore.
+* Aucun jeton GitHub, aucune clé, aucun identifiant Strava dans le dépôt.
+* L'application demande `INTERNET` uniquement pour l'API Strava ; l'identifiant et
+  le secret saisis par l'utilisateur restent dans `SharedPreferences` privées.
+* **Ne pas modifier ni redistribuer l'APK de Strava** : contrefaçon, conditions
+  d'utilisation, et risque direct d'exfiltration des identifiants de connexion.
+  La démonstration de patch binaire de nos propres APK (`releases/DEMO-patch-v4.0.apk`)
+  illustre la technique sans toucher à un logiciel tiers.
 
 ---
 
-## 6. GitHub Actions : limitation rencontrée
-
-Le jeton disponible dans cette session ne possède pas la permission **`workflows`** :
-tout push ou `PUT` API touchant `.github/workflows/**` est rejeté
-(`refusing to allow a GitHub App to create or update workflow … without workflows permission`).
-
-→ Le workflow est donc livré dans **`qring-strava-bridge/ci/qring-strava-bridge-build.yml`**.
-Pour l'activer : le copier dans `.github/workflows/` depuis un compte disposant de la
-permission `workflows` (web GitHub, ou PAT classique `repo` + `workflow`), puis pousser.
-Il compile l'APK avec Gradle et la teste sur émulateurs API 30 et 33 en mode simulation.
-
----
-
-## 7. Reprise / prochaines étapes
+## 9. Reprise / prochaines étapes
 
 | Priorité | Action |
 |---|---|
-| 1 | Installer l'APK sur le Pixel 9a et **tester le mode simulation avec Strava** |
-| 2 | Connecter la bague, lire le journal `QRingBridge`, ajuster si besoin `handlePacket()` |
-| 3 | Ajouter un `HRV`/`0x2A37` multi-octets si une app demande le format 16 bits (flag `0x01`) |
-| 4 | Optionnel : keystore de release + publication de l'APK dans `releases/` |
-| 5 | Optionnel : ajout d'un enregistrement `.fit`/`.tcx` en parallèle, pour les apps sans BLE |
+| 1 | Utilisateur : installer la v4.1, faire la liaison Strava, vérifier le retour `qringhr://` (seule inconnue restante) |
+| 2 | Vérifier sur une vraie sortie que le fichier envoyé est accepté par strava.com |
+| 3 | Si le retour navigateur échoue : ajouter une saisie manuelle du `code` en secours |
+| 4 | Optionnel : écran d'effort plus riche (allure, dénivelé) |
+| 5 | Optionnel : `0x2A37` au format 16 bits si une app le réclame (flag `0x01`) |
+| 6 | Workflow CI : copier `ci/qring-strava-bridge-build.yml` dans `.github/workflows/` depuis un compte disposant de la permission `workflows` |
 
 ---
 
-## 8. Notes de sécurité
+## 10. Historique
 
-* `debug.keystore` (mot de passe `android`) est généré localement et **exclu du dépôt**
-  par `.gitignore`.
-* Aucun jeton, aucun identifiant Strava, aucune requête réseau dans l'application.
-* Les jetons GitHub communiqués en conversation ne sont **pas** stockés dans le dépôt.
+| Version | Apport |
+|---|---|
+| 3.0 → 3.2 | GATT server, services séquentiels (corrige `addService()` en rafale), `0x180D`/`0x2A37` |
+| 3.3 → 3.4 | autotest, 4 variantes de publicité, correctif de connexion au mauvais appareil |
+| 3.5 → 3.7 | autotest honnête, renommage réversible, publicité calquée sur les ceintures FUSE |
+| 3.8 | enregistrement de séance (FC + GPS) et export TCX |
+| 3.9 | envoi direct à Strava (OAuth, multipart, suivi) |
+| 4.0 | bandeau de séance en direct + envoi automatique en fin de séance |
+| 4.1 | client Strava testable et testé hors téléphone, tableau vérifié/non vérifié |
