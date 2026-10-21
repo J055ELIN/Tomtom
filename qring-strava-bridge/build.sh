@@ -26,8 +26,13 @@ set -euo pipefail
 PROJ="$(cd "$(dirname "$0")" && pwd)"
 APP="$PROJ/app/src/main"
 OUT="$PROJ/build"
+<<<<<<< HEAD
 VERSION_NAME="3.3"
 VERSION_CODE="6"
+=======
+VERSION_NAME="3.4"
+VERSION_CODE="7"
+>>>>>>> 27d0d3b (QRing v3.4: autotest ciblé sur notre propre publicité (ignore les ceintures voisines) + keystore de debug versionnée pour des MAJ installables)
 MIN_SDK="23"
 TARGET_SDK="34"
 PKG="com.qring.strava.bridge"
