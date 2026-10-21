@@ -163,6 +163,13 @@
             android:text="@string/btn_export" />
     </LinearLayout>
 
+    <Button
+        android:id="@+id/btnStrava"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/btn_strava" />
+
     <ListView
         android:id="@+id/deviceList"
         android:layout_width="match_parent"

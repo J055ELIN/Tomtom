@@ -215,6 +215,28 @@ public class SessionRecorder {
     // Export TCX
     // ==================================================================
 
+    /** Nom du fichier de la séance courante. */
+    public String fileName() {
+        return "QRingHR-"
+                + new SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(new Date(startTime))
+                + ".tcx";
+    }
+
+    /** Contenu TCX en mémoire (pour l'envoi direct à Strava), ou null si trop peu de points. */
+    public byte[] tcxBytes() {
+        synchronized (samples) {
+            if (samples.size() < 2) {
+                return null;
+            }
+        }
+        try {
+            return buildTcx().getBytes("UTF-8");
+        } catch (Exception e) {
+            Logs.add("[séance] construction TCX impossible : " + e.getMessage());
+            return null;
+        }
+    }
+
     /** Écrit un fichier .tcx (GPS + FC) et renvoie son URI, ou null en cas d'échec. */
     public Uri exportTcx() {
         synchronized (samples) {
@@ -224,9 +246,7 @@ public class SessionRecorder {
             }
         }
         String xml = buildTcx();
-        String name = "QRingHR-"
-                + new SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(new Date(startTime))
-                + ".tcx";
+        String name = fileName();
         try {
             Uri uri = writeToDownloads(name, xml.getBytes("UTF-8"));
             if (uri != null) {

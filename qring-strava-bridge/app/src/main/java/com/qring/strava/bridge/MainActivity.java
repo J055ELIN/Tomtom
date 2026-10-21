@@ -42,7 +42,7 @@ import java.util.Set;
 public class MainActivity extends Activity implements BridgeState.Listener, Logs.Listener {
 
     private static final int REQ_PERMS = 1;
-    private static final String PREFS = "qring_bridge";
+    public static final String PREFS = "qring_bridge";
     private static final String PREF_ADDR = "ring_address";
     private static final String PREF_NAME = "ring_name";
 
@@ -51,7 +51,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
     private ListView deviceList;
     private Button btnScan, btnConnect, btnDisconnect, btnStartBridge, btnStopBridge,
             btnSimulate, btnClear, btnDiagnostic, btnShareLog, btnSelfTest, btnRename,
-            btnExport;
+            btnExport, btnStrava;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<String[]> found = new ArrayList<>();   // {nom, adresse}
@@ -96,6 +96,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         btnSelfTest = findViewById(R.id.btnSelfTest);
         btnRename = findViewById(R.id.btnRename);
         btnExport = findViewById(R.id.btnExport);
+        btnStrava = findViewById(R.id.btnStrava);
 
         BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         btAdapter = bm != null ? bm.getAdapter() : null;
@@ -192,11 +193,19 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
                 exportSession();
             }
         });
+        btnStrava.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                stravaUpload();
+            }
+        });
 
         Logs.addListener(this);
         BridgeState.addListener(this);
 
         requestPermissionsIfNeeded();
+
+        handleStravaRedirect(getIntent());
 
         if (getIntent() != null && getIntent().getBooleanExtra("simulate", false)) {
             Logs.add("[ui] lancement automatique du mode simulation (test)");
@@ -657,6 +666,176 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
                     }
                 })
                 .setNegativeButton(R.string.btn_ok, null)
+                .show();
+    }
+
+    // ==================================================================
+    // Envoi direct à Strava (API officielle) — un seul geste
+    // ==================================================================
+
+    private boolean stravaUploadPending = false;
+
+    private SessionRecorder recorder() {
+        if (exporter == null) {
+            exporter = SessionRecorder.getInstance(this);
+        }
+        return exporter;
+    }
+
+    /** Retour du navigateur : qringhr://qringhr?code=... */
+    private void handleStravaRedirect(Intent intent) {
+        if (intent == null || intent.getData() == null) {
+            return;
+        }
+        android.net.Uri data = intent.getData();
+        if (!"qringhr".equals(data.getScheme())) {
+            return;
+        }
+        String code = data.getQueryParameter("code");
+        String error = data.getQueryParameter("error");
+        if (error != null) {
+            Toast.makeText(this, "Autorisation refusée : " + error, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (code == null || code.length() == 0) {
+            return;
+        }
+        Logs.add("[strava] autorisation reçue, échange du jeton…");
+        Toast.makeText(this, "Autorisation reçue, liaison en cours…", Toast.LENGTH_SHORT).show();
+        StravaClient.exchangeCode(this, code, new StravaClient.Callback() {
+            @Override
+            public void done(final boolean ok, final String message) {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        Logs.add("[strava] " + message);
+                        Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                        if (ok && stravaUploadPending) {
+                            stravaUploadPending = false;
+                            sendSessionToStrava();
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleStravaRedirect(intent);
+    }
+
+    private void stravaUpload() {
+        if (recorder().tcxBytes() == null) {
+            Toast.makeText(this, "Aucune séance enregistrée pour l'instant. "
+                    + "Laissez le pont tourner pendant l'effort, puis réessayez.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (!StravaClient.isLinked(this)) {
+            showStravaSetup();
+            return;
+        }
+        sendSessionToStrava();
+    }
+
+    private void sendSessionToStrava() {
+        final byte[] data = recorder().tcxBytes();
+        if (data == null) {
+            Toast.makeText(this, "Séance vide.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        final String name = recorder().fileName();
+        Logs.add("[strava] envoi de " + name + " (" + data.length + " octets)…");
+        Toast.makeText(this, "Envoi à Strava…", Toast.LENGTH_SHORT).show();
+        StravaClient.upload(this, data, name, new StravaClient.Callback() {
+            @Override
+            public void done(final boolean ok, final String message) {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        Logs.add("[strava] " + message);
+                        new android.app.AlertDialog.Builder(MainActivity.this)
+                                .setTitle(ok ? "Séance envoyée" : "Envoi impossible")
+                                .setMessage(message)
+                                .setPositiveButton(R.string.btn_ok, null)
+                                .show();
+                    }
+                });
+            }
+        });
+    }
+
+    /** Liaison unique : création de l'application API + autorisation. */
+    private void showStravaSetup() {
+        android.widget.LinearLayout box = new android.widget.LinearLayout(this);
+        box.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        box.setPadding(pad, pad, pad, 0);
+
+        android.widget.TextView help = new android.widget.TextView(this);
+        help.setText("Une seule fois :\n\n"
+                + "1. Touchez « Ouvrir strava.com » ci-dessous, connectez-vous, puis créez une "
+                + "application (nom : QRing, catégorie : Other, site : https://strava.com).\n"
+                + "2. Dans « Authorization Callback Domain », écrivez exactement : "
+                + StravaClient.CALLBACK_DOMAIN + "\n"
+                + "3. Revenez ici et collez le « Client ID » et le « Client Secret » affichés "
+                + "sur cette page.");
+        help.setTextSize(12f);
+        box.addView(help);
+
+        final android.widget.EditText id = new android.widget.EditText(this);
+        id.setHint("Client ID (chiffres)");
+        id.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        id.setText(StravaClient.clientId(this));
+        box.addView(id);
+
+        final android.widget.EditText secret = new android.widget.EditText(this);
+        secret.setHint("Client Secret (lettres et chiffres)");
+        secret.setText(StravaClient.clientSecret(this));
+        box.addView(secret);
+
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.addView(box);
+
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Lier Strava (une seule fois)")
+                .setView(scroll)
+                .setPositiveButton("Autoriser", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        String cid = id.getText().toString().trim();
+                        String csec = secret.getText().toString().trim();
+                        if (cid.length() == 0 || csec.length() == 0) {
+                            Toast.makeText(MainActivity.this, "Identifiant et secret sont nécessaires.",
+                                    Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        StravaClient.saveCredentials(MainActivity.this, cid, csec);
+                        stravaUploadPending = true;
+                        Logs.add("[strava] ouverture de l'autorisation dans le navigateur");
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW,
+                                    android.net.Uri.parse(StravaClient.authorizeUrl(MainActivity.this))));
+                        } catch (Exception e) {
+                            Toast.makeText(MainActivity.this, "Aucun navigateur disponible.",
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    }
+                })
+                .setNeutralButton("Ouvrir strava.com", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW,
+                                    android.net.Uri.parse("https://www.strava.com/settings/api")));
+                        } catch (Exception ignored) {
+                        }
+                    }
+                })
+                .setNegativeButton("Plus tard", null)
                 .show();
     }
 

@@ -1,4 +1,4 @@
-# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.8)
+# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.9)
 
 Transforme une bague **QRing / Colmi R0x** (R02, R03, R06, R10…) en **capteur de fréquence
 cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
@@ -8,7 +8,7 @@ cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
    (protocole 0x69)          rôle central + rôle GATT server        (0x180D / 0x2A37)
 ```
 
-* **APK prête à installer :** [`releases/QRingStravaBridge-v3.8.apk`](releases/QRingStravaBridge-v3.8.apk)
+* **APK prête à installer :** [`releases/QRingStravaBridge-v3.9.apk`](releases/QRingStravaBridge-v3.9.apk)
   (41 Ko, minSdk 23, targetSdk 34, signée debug v1 + v2).
 * **Aucune dépendance externe** : 100 % API Android, aucun Google Play Services.
 
@@ -36,7 +36,7 @@ depuis l'API 18**. Ce qui manquait dans l'ancienne version :
 ## 2. Installation
 
 ```bash
-adb install -r releases/QRingStravaBridge-v3.8.apk
+adb install -r releases/QRingStravaBridge-v3.9.apk
 ```
 
 Ou copier l'APK sur le téléphone et l'ouvrir (autoriser les sources inconnues).
@@ -93,6 +93,25 @@ Pixel. Deux usages possibles :
 | Pont sur le Pixel + **Strava sur un second téléphone** | ✅ oui (vérifié) |
 | Pont + **Strava sur le même téléphone** | ❌ impossible par BLE |
 | Pont + **export TCX importé dans Strava (même téléphone)** | ✅ oui → voir ci-dessous |
+
+## 3 duodecies. v3.9 — envoi direct à Strava, sans fichier (API officielle)
+
+Avec **un seul téléphone**, la FC ne peut pas s'afficher en direct dans Strava
+(limite Bluetooth, cf. section 3 nonies). La v3.9 supprime donc l'unique corvée
+restante : le fichier à importer. Le bouton **« Envoyer la séance à Strava »**
+publie l'activité (trace GPS + FC) directement dans le compte Strava. Elle apparaît
+avec sa carte, ses segments et sa courbe de FC, comme n'importe quelle sortie.
+
+Liaison, **une seule fois** (le bouton la propose de lui-même) :
+1. Bouton **Envoyer la séance à Strava** → **Ouvrir strava.com** → *My API Application* :
+   nom `QRing`, catégorie `Other`, site `https://strava.com`.
+2. Champ **Authorization Callback Domain** : écrire exactement `qringhr`.
+3. Revenir dans l'appli, coller le **Client ID** et le **Client Secret** affichés, puis
+   **Autoriser** → le navigateur demande l'accord → retour automatique dans l'appli.
+
+Ensuite : rouler avec le pont actif, puis un seul bouton. Le jeton reste dans les
+préférences privées de l'appli ; aucun identifiant Strava n'est dans le code ni dans
+le dépôt. « Délier » : *Paramètres Strava → Applications autorisées* côté strava.com.
 
 ## 3 undecies. LA configuration qui donne la FC EN DIRECT dans Strava
 
@@ -194,7 +213,7 @@ journalise au passage tous les appareils `0x180D` entendus.
 > (l'application ne peut pas être remplacée par une APK signée avec une autre clé) ;
 > les versions suivantes s'installeront par-dessus.
 
-## 3 quater. Autotest BLE (v3.8)
+## 3 quater. Autotest BLE (v3.9)
 
 Bouton **« Autotest BLE (pont → capteur) »** : le téléphone se teste lui-même, sans
 application tierce.
@@ -212,7 +231,7 @@ Verdict affiché dans une boîte de dialogue et consigné dans le journal :
 | « service 0x180D ABSENT » | la base GATT n'a pas été publiée correctement (le message liste les services vus) |
 | « aucune mesure reçue » | l'abonnement est accepté mais aucune FC n'est poussée (vérifier que le mode test est actif) |
 
-## 3 bis. La bannière de statut (v3.8)
+## 3 bis. La bannière de statut (v3.9)
 
 Sous la valeur de FC, la ligne d'état est colorée :
 

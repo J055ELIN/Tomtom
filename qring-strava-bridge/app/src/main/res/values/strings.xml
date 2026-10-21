@@ -20,6 +20,7 @@
     <string name="btn_export">Exporter la séance (TCX)</string>
     <string name="selftest_title">Autotest BLE</string>
     <string name="btn_share_log">Partager le journal</string>
+    <string name="btn_strava">Envoyer la séance à Strava</string>
     <string name="btn_ok">OK</string>
     <string name="share_title">Journal QRing → Strava</string>
 
