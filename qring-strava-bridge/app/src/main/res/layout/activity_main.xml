@@ -154,6 +154,13 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/btn_rename" />
+
+        <Button
+            android:id="@+id/btnExport"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1.1"
+            android:text="@string/btn_export" />
     </LinearLayout>
 
     <ListView

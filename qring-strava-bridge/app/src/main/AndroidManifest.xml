@@ -16,8 +16,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 
     <!-- Localisation nécessaire au scan BLE avant Android 12 -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30" />
+    <!-- Localisation : nécessaire au scan BLE avant Android 12, et utilisée pour
+         la trace GPS de l'enregistrement de séance (export TCX vers Strava). -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- Service de premier plan (le pont doit rester actif écran éteint) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

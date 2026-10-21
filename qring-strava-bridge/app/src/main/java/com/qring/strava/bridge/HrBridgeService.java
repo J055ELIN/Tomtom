@@ -37,6 +37,7 @@ public class HrBridgeService extends Service
 
     private RingBleClient ring;
     private HrmPeripheral peripheral;
+    private SessionRecorder recorder;
     private PowerManager.WakeLock wakeLock;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -55,6 +56,9 @@ public class HrBridgeService extends Service
             int bpm = (int) Math.round(110 + 48 * Math.sin(simPhase * 2 * Math.PI / 80.0));
             simPhase = (simPhase + 1) % 80;
             lastBpm = bpm;
+            if (recorder != null) {
+                recorder.onHeartRate(bpm);
+            }
             BridgeState.source = "simulation";
             BridgeState.setBpm(bpm);
             if (peripheral != null) {
@@ -75,6 +79,7 @@ public class HrBridgeService extends Service
         createChannel();
         ring = new RingBleClient(this, this);
         peripheral = new HrmPeripheral(this, this);
+        recorder = SessionRecorder.getInstance(this);
     }
 
     @Override
@@ -98,6 +103,11 @@ public class HrBridgeService extends Service
             Logs.add("[service] pont démarré (" + (ok ? "GATT OK" : "GATT en échec") + ")");
         }
         BridgeState.bridgeRunning = true;
+
+        if (recorder != null && !recorder.isRecording()) {
+            recorder.start();
+            BridgeState.recording = true;
+        }
 
         if (sim) {
             simulate = true;
@@ -160,6 +170,10 @@ public class HrBridgeService extends Service
         if (peripheral != null) {
             peripheral.stop();
         }
+        if (recorder != null) {
+            recorder.stop();
+        }
+        BridgeState.recording = false;
         BridgeState.bridgeRunning = false;
         BridgeState.advertising = false;
         BridgeState.simulating = false;
@@ -196,6 +210,9 @@ public class HrBridgeService extends Service
     @Override
     public void onHeartRate(int bpm) {
         lastBpm = bpm;
+        if (recorder != null) {
+            recorder.onHeartRate(bpm);
+        }
         BridgeState.source = "bague";
         BridgeState.setBpm(bpm);
         if (peripheral != null) {

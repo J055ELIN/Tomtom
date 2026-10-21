@@ -50,7 +50,8 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
     private ScrollView logScroll;
     private ListView deviceList;
     private Button btnScan, btnConnect, btnDisconnect, btnStartBridge, btnStopBridge,
-            btnSimulate, btnClear, btnDiagnostic, btnShareLog, btnSelfTest, btnRename;
+            btnSimulate, btnClear, btnDiagnostic, btnShareLog, btnSelfTest, btnRename,
+            btnExport;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<String[]> found = new ArrayList<>();   // {nom, adresse}
@@ -94,6 +95,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         btnShareLog = findViewById(R.id.btnShareLog);
         btnSelfTest = findViewById(R.id.btnSelfTest);
         btnRename = findViewById(R.id.btnRename);
+        btnExport = findViewById(R.id.btnExport);
 
         BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         btAdapter = bm != null ? bm.getAdapter() : null;
@@ -184,6 +186,12 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
                 showRenameDialog();
             }
         });
+        btnExport.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                exportSession();
+            }
+        });
 
         Logs.addListener(this);
         BridgeState.addListener(this);
@@ -232,6 +240,10 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
             addIfMissing(needed, Manifest.permission.BLUETOOTH_ADVERTISE);
             addIfMissing(needed, Manifest.permission.POST_NOTIFICATIONS);
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            addIfMissing(needed, Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // localisation utilisée uniquement pour la trace GPS de la séance
             addIfMissing(needed, Manifest.permission.ACCESS_FINE_LOCATION);
         }
         if (!needed.isEmpty()) {
@@ -485,6 +497,10 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         } else {
             statusText.setTextColor(0xFFB00020);   // rouge : publicité non active
         }
+        if (BridgeState.recording) {
+            sourceText.setText(sourceText.getText() + " • séance : "
+                    + BridgeState.recordedSamples + " pts");
+        }
         bridgeText.setText("Pont BLE : "
                 + (BridgeState.bridgeRunning ? "actif" : "arrêté")
                 + (BridgeState.advertising ? " • publicité 0x180D" : "")
@@ -610,6 +626,39 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
     // ==================================================================
 
     private static final String PREF_LOCAL_NAME_BACKUP = "local_name_backup";
+
+    // ==================================================================
+    // Export de la séance (voie qui fonctionne sur un seul téléphone)
+    // ==================================================================
+
+    private SessionRecorder exporter;
+
+    private void exportSession() {
+        if (exporter == null) {
+            exporter = SessionRecorder.getInstance(this);
+        }
+        final android.net.Uri uri = exporter.exportTcx();
+        if (uri == null) {
+            Toast.makeText(this, "Aucune séance enregistrée pour l'instant. "
+                    + "Laissez le pont tourner pendant l'effort, puis réessayez.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Séance exportée")
+                .setMessage("Fichier TCX (trace GPS + fréquence cardiaque) enregistré dans "
+                        + "Téléchargements/QRingHR.\n\n"
+                        + "Pour l'ajouter à Strava : Strava → Enregistrer → (+) → Importer un fichier "
+                        + "→ choisir ce fichier.\n\n"
+                        + "Ou utilisez « Partager » pour l'envoyer à l'application de votre choix.")
+                .setPositiveButton("Partager", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        exporter.shareTcx(uri, "Séance QRing HR");
+                    }
+                })
+                .setNegativeButton(R.string.btn_ok, null)
+                .show();
+    }
 
     private void showRenameDialog() {
         final android.widget.EditText input = new android.widget.EditText(this);

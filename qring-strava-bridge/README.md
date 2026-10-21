@@ -1,4 +1,4 @@
-# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.7)
+# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v3.8)
 
 Transforme une bague **QRing / Colmi R0x** (R02, R03, R06, R10…) en **capteur de fréquence
 cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
@@ -8,7 +8,7 @@ cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
    (protocole 0x69)          rôle central + rôle GATT server        (0x180D / 0x2A37)
 ```
 
-* **APK prête à installer :** [`releases/QRingStravaBridge-v3.7.apk`](releases/QRingStravaBridge-v3.7.apk)
+* **APK prête à installer :** [`releases/QRingStravaBridge-v3.8.apk`](releases/QRingStravaBridge-v3.8.apk)
   (41 Ko, minSdk 23, targetSdk 34, signée debug v1 + v2).
 * **Aucune dépendance externe** : 100 % API Android, aucun Google Play Services.
 
@@ -36,7 +36,7 @@ depuis l'API 18**. Ce qui manquait dans l'ancienne version :
 ## 2. Installation
 
 ```bash
-adb install -r releases/QRingStravaBridge-v3.7.apk
+adb install -r releases/QRingStravaBridge-v3.8.apk
 ```
 
 Ou copier l'APK sur le téléphone et l'ouvrir (autoriser les sources inconnues).
@@ -75,6 +75,35 @@ aucun n'était réellement enregistré, donc Strava (qui se connectait bien, com
 montraient les journaux) ne trouvait aucun service `0x180D` et repartait sans s'abonner.
 La v3.2 les enregistre **en séquence**, puis démarre la publicité, et affiche
 « FC souscrite » dès qu'une application active réellement les notifications.
+
+## 3 nonies. LE POINT CLÉ : un téléphone ne voit pas ses propres publicités
+
+Test décisif effectué sur le Pixel 9a : le pont a été détecté, **connecté et abonné**
+par le Strava d'un **second téléphone** (journal : `✔ Abonnement FC activé par
+55:DE:C5:05:82:47`, `→ FC 99 bpm envoyée immédiatement`, lectures `0x2A29`/`0x2A25`).
+Le même capteur est **invisible depuis le téléphone qui l'émet**.
+
+C'est une limite du contrôleur Bluetooth, pas de l'application : **un appareil ne
+reçoit jamais ses propres paquets publicitaires**. Aucune application (Strava, nRF
+Connect, la nôtre) lancée sur le Pixel ne pourra donc voir le capteur émis par ce
+Pixel. Deux usages possibles :
+
+| Usage | Marche ? |
+|---|---|
+| Pont sur le Pixel + **Strava sur un second téléphone** | ✅ oui (vérifié) |
+| Pont + **Strava sur le même téléphone** | ❌ impossible par BLE |
+| Pont + **export TCX importé dans Strava (même téléphone)** | ✅ oui → voir ci-dessous |
+
+## 3 decies. v3.8 — enregistrement de séance + export TCX (un seul téléphone)
+
+Pendant que le pont tourne, l'application enregistre **la FC (1 point/s) et la trace
+GPS** (Strava refuse un fichier sans GPS : « Empty file »). Le bouton
+**« Exporter la séance (TCX) »** écrit un fichier dans
+`Téléchargements/QRingHR/QRingHR-AAAAMMJJ-HHMM.tcx` (positions + `HeartRateBpm`),
+puis propose de le partager.
+
+Dans Strava : **Enregistrer → (+) → Importer un fichier** → choisir le `.tcx`.
+L'activité remonte avec la carte **et** la fréquence cardiaque.
 
 ## 3 octies. v3.7 — réplique exacte de la trame des ceintures FUSE
 
@@ -139,7 +168,7 @@ journalise au passage tous les appareils `0x180D` entendus.
 > (l'application ne peut pas être remplacée par une APK signée avec une autre clé) ;
 > les versions suivantes s'installeront par-dessus.
 
-## 3 quater. Autotest BLE (v3.7)
+## 3 quater. Autotest BLE (v3.8)
 
 Bouton **« Autotest BLE (pont → capteur) »** : le téléphone se teste lui-même, sans
 application tierce.
@@ -157,7 +186,7 @@ Verdict affiché dans une boîte de dialogue et consigné dans le journal :
 | « service 0x180D ABSENT » | la base GATT n'a pas été publiée correctement (le message liste les services vus) |
 | « aucune mesure reçue » | l'abonnement est accepté mais aucune FC n'est poussée (vérifier que le mode test est actif) |
 
-## 3 bis. La bannière de statut (v3.7)
+## 3 bis. La bannière de statut (v3.8)
 
 Sous la valeur de FC, la ligne d'état est colorée :
 
