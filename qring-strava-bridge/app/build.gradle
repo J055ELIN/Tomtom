@@ -20,7 +20,7 @@ android {
         shared {
             storeFile file("../debug.keystore")
             storePassword "android"
-            keyAlias System.getProperty("ksAlias", "androiddebugkey")
+            keyAlias (project.findProperty("ksAlias") ?: "androiddebugkey")
             keyPassword "android"
             storeType "PKCS12"
         }
