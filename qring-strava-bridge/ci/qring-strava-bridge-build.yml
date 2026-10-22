@@ -1,0 +1,170 @@
+# ============================================================================
+# QRing → Strava HR Bridge : compilation de l'APK et publication automatique
+#
+# Rien à faire à la main : à chaque modification de qring-strava-bridge/,
+# ce workflow compile, signe, vérifie et publie l'APK en Release GitHub.
+#
+# Lien de téléchargement permanent (toujours la dernière version produite) :
+#   https://github.com/J055ELIN/Tomtom/releases/download/bridge-latest/QRingStravaBridge.apk
+#
+# L'APK est signée avec la keystore versionnée (debug.keystore), donc elle
+# s'installe par-dessus les versions précédentes (adb install -r / mise à jour).
+# ============================================================================
+name: QRing Strava Bridge — APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'arena/5a914645-tomtom'
+    paths:
+      - 'qring-strava-bridge/**'
+      - '.github/workflows/qring-strava-bridge-build.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Compiler et signer
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      code: ${{ steps.meta.outputs.code }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Lire la version
+        id: meta
+        working-directory: qring-strava-bridge
+        run: |
+          CODE=$(grep -oP 'versionCode\s+\K[0-9]+' app/build.gradle | head -1)
+          NAME=$(grep -oP 'versionName\s+"\K[^"]+' app/build.gradle | head -1)
+          echo "version=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Version $NAME ($CODE)"
+
+      - name: Vérifier la keystore
+        working-directory: qring-strava-bridge
+        run: |
+          set -euo pipefail
+          test -f debug.keystore || { echo "debug.keystore absente"; exit 1; }
+          # Le fichier est du PKCS#12 : on demande explicitement ce type.
+          keytool -list -v -keystore debug.keystore -storetype PKCS12 \
+                  -storepass android 2>/dev/null | grep -E "Alias|SHA256:" | head -4
+          ALIAS=$(keytool -list -keystore debug.keystore -storetype PKCS12 \
+                  -storepass android 2>/dev/null \
+                  | grep -i "PrivateKeyEntry" | head -1 | cut -d, -f1)
+          echo "Alias détecté : $ALIAS"
+          echo "ksAlias=${ALIAS:-androiddebugkey}" >> "$GITHUB_ENV"
+
+      - name: Compilation (assembleRelease)
+        working-directory: qring-strava-bridge
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace \
+            -PksAlias="${{ env.ksAlias }}" :app:assembleRelease
+
+      - name: Vérifier et nommer l'APK
+        working-directory: qring-strava-bridge
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -n "$APK" || { echo "Aucune APK produite"; exit 1; }
+          cp "$APK" /tmp/QRingStravaBridge.apk
+          cp "$APK" "/tmp/QRingStravaBridge-v${{ steps.meta.outputs.version }}.apk"
+          BT="${ANDROID_HOME}/build-tools/34.0.0"
+          echo "=== badging ==="
+          "$BT/aapt" dump badging /tmp/QRingStravaBridge.apk \
+            | grep -E "^package|uses-permission.*FOREGROUND" || true
+          echo "=== signature ==="
+          "$BT/apksigner" verify --print-certs /tmp/QRingStravaBridge.apk
+          echo "=== taille ==="
+          ls -l /tmp/QRingStravaBridge*.apk
+
+      - name: Publier l'artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qring-apk
+          path: |
+            /tmp/QRingStravaBridge.apk
+            /tmp/QRingStravaBridge-v${{ steps.meta.outputs.version }}.apk
+          if-no-files-found: error
+
+  release:
+    name: Publier la Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Récupérer l'APK
+        uses: actions/download-artifact@v4
+        with:
+          name: qring-apk
+          path: dist
+
+      - name: Publier (tag bridge-latest, écrasement)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
+          CODE: ${{ needs.build.outputs.code }}
+        run: |
+          set -euo pipefail
+          ls -l dist
+          SHA=$(sha256sum dist/QRingStravaBridge.apk | cut -d' ' -f1)
+          echo "SHA-256 : $SHA"
+
+          # Tag fixe : le lien de téléchargement ne change jamais.
+          if gh release view bridge-latest >/dev/null 2>&1; then
+            gh release delete bridge-latest --yes --cleanup-tag
+          fi
+
+          {
+            echo "**QRing → Strava HR Bridge v${VERSION}** (versionCode ${CODE})"
+            echo
+            echo "APK signée avec la keystore de debug versionnée : elle s'installe"
+            echo "par-dessus les versions précédentes."
+            echo
+            echo '```'
+            echo "SHA-256 : ${SHA}"
+            echo '```'
+            echo
+            echo "### Installation"
+            echo '```bash'
+            echo "adb install -r QRingStravaBridge.apk"
+            echo '```'
+            echo
+            echo "Ou ouvrir le fichier depuis le téléphone (autoriser l'installation"
+            echo "depuis cette source)."
+            echo
+            echo "### Corrections de cette version"
+            echo "- champ multipart \`file\` (Strava répondait 400 sur chaque envoi)"
+            echo "- un \`<Time>\` par trackpoint (TCX valide même sans FC au départ)"
+            echo "- service de premier plan typé \`connectedDevice|location\` (GPS écran éteint)"
+            echo "- \`Sport=\"Biking\"\` + \`sport_type=Ride\` (Strava ne mappait pas \`Other\`)"
+            echo "- \`external_id\` stable, \`trainer\`/\`commute\` explicites"
+          } > notes.md
+
+          gh release create bridge-latest \
+            --title "QRing Strava Bridge — dernière version" \
+            --notes-file notes.md \
+            dist/QRingStravaBridge.apk \
+            "dist/QRingStravaBridge-v${VERSION}.apk"
+
+          echo "=== vérification du lien public ==="
+          curl -sIL -o /dev/null -w "%{http_code}\n" \
+            "https://github.com/J055ELIN/Tomtom/releases/download/bridge-latest/QRingStravaBridge.apk"

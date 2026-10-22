@@ -1,0 +1,10 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+# La keystore de DEBUG est volontairement versionnée : elle ne protège rien et
+# garantit que toutes les APK de releases/ partagent la même signature, donc
+# qu'elles s'installent par-dessus les versions précédentes. Voir README §8.
+#*.keystore
+*.jks

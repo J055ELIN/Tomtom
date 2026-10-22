@@ -1,0 +1,51 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.qring.strava.bridge'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.qring.strava.bridge"
+        minSdk 23
+        targetSdk 34
+        versionCode 15
+        versionName "4.2"
+    }
+
+    // Keystore de debug versionnée (PKCS#12 malgré l'extension .keystore).
+    // Indispensable en CI : sans elle, chaque runner génère sa propre clé et les
+    // APK ne s'installent plus par-dessus les précédentes.
+    // storeType est forcé : le fichier est du PKCS#12, pas du JKS.
+    signingConfigs {
+        shared {
+            storeFile file("../debug.keystore")
+            storePassword "android"
+            keyAlias System.getProperty("ksAlias", "androiddebugkey")
+            keyPassword "android"
+            storeType "PKCS12"
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.shared
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    // Aucune dépendance externe : 100 % framework Android.
+}
