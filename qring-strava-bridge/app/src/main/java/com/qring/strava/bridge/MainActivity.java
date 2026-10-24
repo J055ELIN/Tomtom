@@ -56,6 +56,7 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<String[]> found = new ArrayList<>();   // {nom, adresse}
     private final Set<String> foundAddresses = new HashSet<>();
+    private final Set<String> hrAddresses = new HashSet<>();   // annoncent 0x180D
     private ArrayAdapter<String> listAdapter;
 
     private BluetoothAdapter btAdapter;
@@ -388,18 +389,24 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
             }
         }
 
+        boolean isHrSensor = record != null && HrmClient.advertisesHeartRate(record.getServiceUuids());
         boolean looksLikeRing = looksLikeQRing(name, record);
-        if (!looksLikeRing) {
-            return; // on ne garde que les bagues probables
+        if (!looksLikeRing && !isHrSensor) {
+            return; // bagues probables + capteurs FC standard (montres, ceintures)
         }
         if (name == null || name.isEmpty()) {
             name = "(sans nom)";
         }
 
         foundAddresses.add(address);
+        if (isHrSensor) {
+            hrAddresses.add(address);
+        }
         found.add(new String[]{name, address});
-        listAdapter.add(name + "   " + address + "   " + result.getRssi() + " dBm");
-        Logs.add("[ui] bague détectée : " + name + " [" + address + "] RSSI " + result.getRssi());
+        listAdapter.add(name + (isHrSensor ? "  ♥" : "") + "   " + address + "   "
+                + result.getRssi() + " dBm");
+        Logs.add("[ui] " + (isHrSensor ? "capteur FC" : "bague") + " détecté : " + name
+                + " [" + address + "] RSSI " + result.getRssi());
 
         if (selectedAddress == null) {
             selectedAddress = address;
@@ -448,6 +455,9 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
         if (address != null) {
             intent.putExtra(HrBridgeService.EXTRA_ADDRESS, address);
             intent.putExtra(HrBridgeService.EXTRA_NAME, name);
+            if (hrAddresses.contains(address)) {
+                intent.putExtra(HrBridgeService.EXTRA_STANDARD_HRM, true);
+            }
         }
         if (simulate) {
             intent.putExtra(HrBridgeService.EXTRA_SIMULATE, true);
@@ -458,7 +468,9 @@ public class MainActivity extends Activity implements BridgeState.Listener, Logs
             startService(intent);
         }
         BridgeState.bridgeRunning = true;
-        BridgeState.setStatus(simulate ? "Démarrage du mode test…" : "Démarrage du pont…");
+        boolean standard = address != null && hrAddresses.contains(address);
+        BridgeState.setStatus(simulate ? "Démarrage du mode test…"
+                : (standard ? "Connexion au capteur FC…" : "Démarrage du pont…"));
         Logs.add("[ui] démarrage du service" + (simulate ? " (simulation)" : ""));
         handler.removeCallbacks(sessionTick);
         handler.postDelayed(sessionTick, 1000L);

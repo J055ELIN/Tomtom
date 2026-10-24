@@ -1,4 +1,4 @@
-# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v4.1)
+# QRing / Colmi → Strava — pont de fréquence cardiaque BLE (v4.2)
 
 Transforme une bague **QRing / Colmi R0x** (R02, R03, R06, R10…) en **capteur de fréquence
 cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
@@ -8,7 +8,7 @@ cardiaque BLE standard**, détectable par **Strava**, Wahoo, Garmin, Zwift, etc.
    (protocole 0x69)          rôle central + rôle GATT server        (0x180D / 0x2A37)
 ```
 
-* **APK prête à installer :** [`releases/QRingStravaBridge-v4.1.apk`](releases/QRingStravaBridge-v4.1.apk)
+* **APK prête à installer :** [`releases/QRingStravaBridge-v4.2.apk`](releases/QRingStravaBridge-v4.2.apk)
   (41 Ko, minSdk 23, targetSdk 34, signée debug v1 + v2).
 * **Aucune dépendance externe** : 100 % API Android, aucun Google Play Services.
 
@@ -36,7 +36,7 @@ depuis l'API 18**. Ce qui manquait dans l'ancienne version :
 ## 2. Installation
 
 ```bash
-adb install -r releases/QRingStravaBridge-v4.1.apk
+adb install -r releases/QRingStravaBridge-v4.2.apk
 ```
 
 Ou copier l'APK sur le téléphone et l'ouvrir (autoriser les sources inconnues).
@@ -93,6 +93,25 @@ Pixel. Deux usages possibles :
 | Pont sur le Pixel + **Strava sur un second téléphone** | ✅ oui (vérifié) |
 | Pont + **Strava sur le même téléphone** | ❌ impossible par BLE |
 | Pont + **export TCX importé dans Strava (même téléphone)** | ✅ oui → voir ci-dessous |
+
+## 3 quindecies. v4.2 — n'importe quel capteur FC standard, dont la Huawei Band 9
+
+L'appli ne se limite plus à la bague : elle accepte **tout appareil qui expose le profil
+BLE Heart Rate standard** (`0x180D` / `0x2A37`) — Huawei Band 9, Amazfit, Garmin,
+Polar H10, Wahoo TICKR…
+
+* Les appareils qui annoncent `0x180D` apparaissent dans la liste avec un **♥**.
+* Sélection + **Connecter** : l'appli se connecte en client GATT, s'abonne à `0x2A37`,
+  décode la mesure (format 8 ou 16 bits) et l'injecte dans le même circuit que la bague
+  (affichage, enregistrement GPS/FC, export TCX, envoi Strava).
+* Journal détaillé en cas d'échec : `service 0x180D ABSENT. Services vus : …`
+
+**Point important, non contournable** : une montre Huawei n'expose `0x180D` que si sa
+**diffusion de FC est activée** (Paramètres → Diffusion des données de FC). Éteinte,
+elle n'annonce ni ne publie le profil standard, et aucun logiciel ne peut le deviner :
+le protocole propriétaire Huawei exige un compte Huawei ID, une app approuvée par
+Huawei et des clés propres à chaque montre. L'activation est donc un geste **sur la
+montre**, une fois par séance — mais ensuite tout est automatique côté téléphone.
 
 ## 3 quaterdecies. v4.1 — ce qui est VÉRIFIÉ et ce qui ne l'est pas
 
@@ -243,7 +262,7 @@ journalise au passage tous les appareils `0x180D` entendus.
 > (l'application ne peut pas être remplacée par une APK signée avec une autre clé) ;
 > les versions suivantes s'installeront par-dessus.
 
-## 3 quater. Autotest BLE (v4.1)
+## 3 quater. Autotest BLE (v4.2)
 
 Bouton **« Autotest BLE (pont → capteur) »** : le téléphone se teste lui-même, sans
 application tierce.
@@ -261,7 +280,7 @@ Verdict affiché dans une boîte de dialogue et consigné dans le journal :
 | « service 0x180D ABSENT » | la base GATT n'a pas été publiée correctement (le message liste les services vus) |
 | « aucune mesure reçue » | l'abonnement est accepté mais aucune FC n'est poussée (vérifier que le mode test est actif) |
 
-## 3 bis. La bannière de statut (v4.1)
+## 3 bis. La bannière de statut (v4.2)
 
 Sous la valeur de FC, la ligne d'état est colorée :
 

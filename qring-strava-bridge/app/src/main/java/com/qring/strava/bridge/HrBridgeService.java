@@ -23,7 +23,7 @@ import android.os.PowerManager;
  * et la republie en notifications 0x2A37 (profil Heart Rate standard).
  */
 public class HrBridgeService extends Service
-        implements RingBleClient.Listener, HrmPeripheral.Listener {
+        implements RingBleClient.Listener, HrmPeripheral.Listener, HrmClient.Listener {
 
     public static final String ACTION_START = "com.qring.strava.bridge.action.START";
     public static final String ACTION_STOP = "com.qring.strava.bridge.action.STOP";
@@ -31,11 +31,14 @@ public class HrBridgeService extends Service
     public static final String EXTRA_ADDRESS = "extra_address";
     public static final String EXTRA_NAME = "extra_name";
     public static final String EXTRA_SIMULATE = "extra_simulate";
+    /** true = source FC standard (0x180D) : montre/bracelet ou ceinture, pas la bague. */
+    public static final String EXTRA_STANDARD_HRM = "extra_standard_hrm";
 
     private static final String CHANNEL_ID = "bridge";
     private static final int NOTIF_ID = 42;
 
     private RingBleClient ring;
+    private HrmClient hrm;
     private HrmPeripheral peripheral;
     private SessionRecorder recorder;
     private PowerManager.WakeLock wakeLock;
@@ -93,6 +96,7 @@ public class HrBridgeService extends Service
         boolean sim = intent != null && intent.getBooleanExtra(EXTRA_SIMULATE, false);
         String address = intent != null ? intent.getStringExtra(EXTRA_ADDRESS) : null;
         String name = intent != null ? intent.getStringExtra(EXTRA_NAME) : null;
+        boolean standardHrm = intent != null && intent.getBooleanExtra(EXTRA_STANDARD_HRM, false);
 
         startForeground(NOTIF_ID, buildNotification());
         acquireWakeLock();
@@ -116,6 +120,21 @@ public class HrBridgeService extends Service
             handler.removeCallbacks(simulationTick);
             handler.post(simulationTick);
             Logs.add("[service] mode simulation activé");
+        } else if (standardHrm && address != null && !address.isEmpty()) {
+            simulate = false;
+            BridgeState.simulating = false;
+            BridgeState.setStatus("Connexion au capteur FC " + (name != null ? name : address) + "…");
+            try {
+                if (hrm == null) {
+                    hrm = new HrmClient(this, this);
+                }
+                BluetoothDevice device = android.bluetooth.BluetoothAdapter
+                        .getDefaultAdapter().getRemoteDevice(address);
+                hrm.connect(device);
+            } catch (Exception e) {
+                Logs.add("[service] adresse invalide : " + e.getMessage());
+                BridgeState.setStatus("Adresse de capteur invalide");
+            }
         } else if (address != null && !address.isEmpty()) {
             simulate = false;
             BridgeState.simulating = false;
@@ -144,6 +163,9 @@ public class HrBridgeService extends Service
         if (ring != null) {
             ring.disconnect();
         }
+        if (hrm != null) {
+            hrm.disconnect();
+        }
         if (peripheral != null) {
             peripheral.stop();
         }
@@ -166,6 +188,9 @@ public class HrBridgeService extends Service
         if (ring != null) {
             ring.stopHeartRateStream();
             ring.disconnect();
+        }
+        if (hrm != null) {
+            hrm.disconnect();
         }
         if (peripheral != null) {
             peripheral.stop();
@@ -221,6 +246,50 @@ public class HrBridgeService extends Service
         if (System.currentTimeMillis() - lastNotifUpdate > 1000L) {
             updateNotification();
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Callbacks capteur standard (0x180D)
+    // ------------------------------------------------------------------
+
+    @Override
+    public void onHrmConnected(BluetoothDevice device) {
+        BridgeState.ringConnected = true;
+        try {
+            BridgeState.ringName = device != null ? device.getName() : "";
+        } catch (SecurityException ignored) {
+        }
+        BridgeState.setStatus("Capteur FC connecté");
+        Logs.add("[service] capteur FC standard connecté");
+    }
+
+    @Override
+    public void onHrmDisconnected() {
+        BridgeState.ringConnected = false;
+        if (!simulate) {
+            BridgeState.setStatus("Capteur FC déconnecté");
+        }
+    }
+
+    @Override
+    public void onHrmHeartRate(int bpm) {
+        lastBpm = bpm;
+        if (recorder != null) {
+            recorder.onHeartRate(bpm);
+        }
+        BridgeState.source = "capteur FC";
+        BridgeState.setBpm(bpm);
+        if (peripheral != null) {
+            peripheral.notifyHeartRate(bpm);
+        }
+        if (System.currentTimeMillis() - lastNotifUpdate > 1000L) {
+            updateNotification();
+        }
+    }
+
+    @Override
+    public void onHrmLog(String message) {
+        Logs.add(message);
     }
 
     @Override
